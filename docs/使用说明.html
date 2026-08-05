@@ -1,0 +1,1398 @@
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>发运单生成器 · 使用说明</title>
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/index.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.0.6/index.min.css" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #0a0e1a;
+    --bg-secondary: #0f1629;
+    --bg-card: rgba(15, 22, 41, 0.85);
+    --bg-card-hover: rgba(20, 30, 55, 0.95);
+    --border-color: rgba(0, 212, 255, 0.15);
+    --border-glow: rgba(0, 212, 255, 0.4);
+    --cyan: #00d4ff;
+    --cyan-dim: rgba(0, 212, 255, 0.6);
+    --purple: #a855f7;
+    --purple-dim: rgba(168, 85, 247, 0.5);
+    --green: #10b981;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --font-sans: 'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ===== Background Effects ===== */
+  .bg-grid {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+  .bg-radial {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0,212,255,0.08), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 60%, rgba(168,85,247,0.06), transparent),
+      radial-gradient(ellipse 50% 50% at 10% 90%, rgba(16,185,129,0.05), transparent);
+  }
+
+  /* ===== Scrollbar ===== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg-primary); }
+  ::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.3); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.5); }
+
+  /* ===== Layout ===== */
+  .app-layout {
+    display: flex;
+    min-height: 100vh;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ===== Sidebar ===== */
+  .sidebar {
+    width: 280px;
+    min-width: 280px;
+    background: linear-gradient(180deg, rgba(10,14,26,0.98), rgba(15,22,41,0.98));
+    border-right: 1px solid var(--border-color);
+    padding: 0;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    overflow-y: auto;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar-header {
+    padding: 28px 24px 20px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: center;
+  }
+  .sidebar-logo {
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--cyan);
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .sidebar-title {
+    font-size: 18px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #fff, var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .sidebar-ver {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-family: var(--font-mono);
+  }
+  .sidebar-nav {
+    padding: 16px 0;
+    flex: 1;
+  }
+  .nav-group-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 12px 24px 6px;
+    font-weight: 600;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 24px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13.5px;
+    transition: all 0.25s;
+    border-left: 2px solid transparent;
+    position: relative;
+  }
+  .nav-item:hover {
+    color: var(--cyan);
+    background: rgba(0,212,255,0.05);
+    border-left-color: rgba(0,212,255,0.3);
+  }
+  .nav-item.active {
+    color: var(--cyan);
+    background: rgba(0,212,255,0.08);
+    border-left-color: var(--cyan);
+  }
+  .nav-icon { font-size: 16px; width: 22px; text-align: center; }
+  .nav-num {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-left: auto;
+    background: rgba(255,255,255,0.05);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ===== Main Content ===== */
+  .main-content {
+    margin-left: 280px;
+    flex: 1;
+    padding: 40px 48px 80px;
+    max-width: 1200px;
+  }
+
+  /* ===== Hero Section ===== */
+  .hero {
+    text-align: center;
+    padding: 60px 0 50px;
+    position: relative;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 10%; right: 10%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 20px;
+    padding: 6px 18px;
+    font-size: 12px;
+    color: var(--cyan);
+    letter-spacing: 1px;
+    margin-bottom: 20px;
+    font-weight: 500;
+  }
+  .hero-badge .dot {
+    width: 6px; height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse-dot 2s infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16,185,129,0.5); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+  }
+  .hero h1 {
+    font-size: 42px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #ffffff 0%, var(--cyan) 50%, var(--purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 14px;
+    line-height: 1.2;
+  }
+  .hero-desc {
+    font-size: 15px;
+    color: var(--text-secondary);
+    max-width: 680px;
+    margin: 0 auto;
+    line-height: 1.8;
+  }
+  .hero-desc strong { color: var(--cyan); font-weight: 600; }
+
+  /* ===== Section ===== */
+  .section {
+    margin-top: 56px;
+    animation: fadeInUp 0.6s ease-out both;
+  }
+  .section:nth-child(2) { animation-delay: 0.05s; }
+  .section:nth-child(3) { animation-delay: 0.1s; }
+  .section:nth-child(4) { animation-delay: 0.15s; }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 24px;
+    position: relative;
+  }
+  .section-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border-glow), transparent);
+  }
+  .section-num {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--cyan);
+    background: rgba(0,212,255,0.1);
+    border: 1px solid rgba(0,212,255,0.25);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+  .section-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .section-icon { font-size: 20px; }
+
+  /* ===== Card ===== */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 20px;
+    backdrop-filter: blur(12px);
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .card:hover {
+    border-color: rgba(0,212,255,0.3);
+    background: var(--bg-card-hover);
+    box-shadow: 0 0 30px rgba(0,212,255,0.05);
+  }
+  .card:hover::before { opacity: 1; }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .icon { color: var(--cyan); }
+
+  /* ===== Quick Start Steps ===== */
+  .steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .step-card {
+    background: rgba(0,212,255,0.03);
+    border: 1px solid rgba(0,212,255,0.1);
+    border-radius: 10px;
+    padding: 22px;
+    position: relative;
+    transition: all 0.3s;
+  }
+  .step-card:hover {
+    border-color: rgba(0,212,255,0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0,212,255,0.08);
+  }
+  .step-num {
+    font-family: var(--font-mono);
+    font-size: 32px;
+    font-weight: 800;
+    color: rgba(0,212,255,0.15);
+    position: absolute;
+    top: 10px; right: 16px;
+    line-height: 1;
+  }
+  .step-action {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--cyan);
+    margin-bottom: 8px;
+  }
+  .step-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+  .step-desc code {
+    background: rgba(0,212,255,0.1);
+    color: var(--cyan);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  /* ===== Tables ===== */
+  .table-wrapper {
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  thead th {
+    background: rgba(0,212,255,0.08);
+    color: var(--cyan);
+    font-weight: 600;
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 11px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    color: var(--text-secondary);
+    vertical-align: top;
+  }
+  tbody tr:hover { background: rgba(0,212,255,0.03); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td:first-child {
+    color: var(--text-primary);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* ===== Inline Code / Kbd ===== */
+  code {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    background: rgba(0,212,255,0.08);
+    color: var(--cyan);
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid rgba(0,212,255,0.12);
+  }
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    background: linear-gradient(180deg, rgba(30,40,65,0.9), rgba(20,28,50,0.9));
+    color: #e2e8f0;
+    padding: 3px 8px;
+    border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-bottom-width: 2px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    display: inline-block;
+    line-height: 1.4;
+  }
+
+  /* ===== Color Tags ===== */
+  .color-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 5px;
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .color-tag .swatch {
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .tag-green { background: rgba(16,185,129,0.1); color: var(--green); }
+  .tag-green .swatch { background: var(--green); box-shadow: 0 0 6px rgba(16,185,129,0.5); }
+  .tag-yellow { background: rgba(245,158,11,0.1); color: var(--yellow); }
+  .tag-yellow .swatch { background: var(--yellow); box-shadow: 0 0 6px rgba(245,158,11,0.5); }
+  .tag-white { background: rgba(255,255,255,0.06); color: var(--text-secondary); }
+  .tag-white .swatch { background: #94a3b8; }
+
+  /* ===== Info Boxes ===== */
+  .info-box {
+    display: flex;
+    gap: 14px;
+    padding: 18px 20px;
+    border-radius: 10px;
+    margin: 16px 0;
+    font-size: 13.5px;
+    line-height: 1.8;
+  }
+  .info-box .info-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .info-tip {
+    background: rgba(0,212,255,0.06);
+    border: 1px solid rgba(0,212,255,0.15);
+    color: var(--text-secondary);
+  }
+  .info-tip .info-icon { color: var(--cyan); }
+  .info-warn {
+    background: rgba(245,158,11,0.06);
+    border: 1px solid rgba(245,158,11,0.15);
+    color: var(--text-secondary);
+  }
+  .info-warn .info-icon { color: var(--yellow); }
+  .info-box strong { color: var(--text-primary); }
+  .info-box code {
+    font-size: 12px;
+  }
+
+  /* ===== UI Mockup ===== */
+  .ui-mockup {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 16px 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+  .mockup-titlebar {
+    background: rgba(0,212,255,0.06);
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mockup-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+  .mockup-dot.r { background: #ef4444; }
+  .mockup-dot.y { background: #f59e0b; }
+  .mockup-dot.g { background: #10b981; }
+  .mockup-body {
+    padding: 16px 20px;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .mockup-body .hl-cyan { color: var(--cyan); }
+  .mockup-body .hl-purple { color: var(--purple); }
+  .mockup-body .hl-green { color: var(--green); }
+  .mockup-body .hl-yellow { color: var(--yellow); }
+  .mockup-body .hl-white { color: var(--text-primary); }
+
+  /* ===== Concept Cards ===== */
+  .concept-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin: 16px 0;
+  }
+  .concept-item {
+    background: rgba(0,212,255,0.04);
+    border: 1px solid rgba(0,212,255,0.1);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    transition: all 0.3s;
+  }
+  .concept-item:hover {
+    border-color: rgba(0,212,255,0.3);
+    transform: translateY(-1px);
+  }
+  .concept-item .c-icon { font-size: 24px; margin-bottom: 8px; }
+  .concept-item .c-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .concept-item .c-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* ===== Entry Methods ===== */
+  .entry-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .entry-item {
+    display: flex;
+    gap: 14px;
+    padding: 14px 18px;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  .entry-item:hover {
+    border-color: rgba(0,212,255,0.2);
+    background: rgba(0,212,255,0.03);
+  }
+  .entry-item .e-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+    width: 36px; height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,212,255,0.08);
+    border-radius: 8px;
+  }
+  .entry-item .e-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 3px;
+  }
+  .entry-item .e-desc {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* ===== Auto Rules ===== */
+  .rule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 12px 0;
+  }
+  .rule-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    background: rgba(168,85,247,0.04);
+    border-left: 3px solid var(--purple);
+    border-radius: 0 8px 8px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+  .rule-item .r-arrow {
+    color: var(--purple);
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .rule-item code {
+    font-size: 11.5px;
+  }
+
+  /* ===== FAQ ===== */
+  .faq-item {
+    margin-bottom: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+  .faq-item:hover {
+    border-color: rgba(0,212,255,0.25);
+  }
+  .faq-q {
+    padding: 14px 20px;
+    background: rgba(0,212,255,0.04);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+  }
+  .faq-q:hover { background: rgba(0,212,255,0.07); }
+  .faq-q .q-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--cyan);
+    background: rgba(0,212,255,0.12);
+    padding: 2px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .faq-q .toggle-icon {
+    margin-left: auto;
+    color: var(--text-muted);
+    transition: transform 0.3s;
+    font-size: 12px;
+  }
+  .faq-item.open .toggle-icon { transform: rotate(180deg); }
+  .faq-a {
+    padding: 0 20px;
+    max-height: 0;
+    overflow: hidden;
+    transition: all 0.35s ease;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.8;
+    background: rgba(0,0,0,0.15);
+  }
+  .faq-item.open .faq-a {
+    padding: 14px 20px;
+    max-height: 300px;
+  }
+
+  /* ===== Shortcut Table Special ===== */
+  .shortcut-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* ===== Context Menu Visual ===== */
+  .ctx-menu-visual {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+  }
+  .ctx-item:hover {
+    background: rgba(0,212,255,0.05);
+    border-color: rgba(0,212,255,0.15);
+    color: var(--text-primary);
+  }
+  .ctx-item .ctx-icon { font-size: 14px; width: 20px; text-align: center; }
+
+  /* ===== Footer ===== */
+  .footer {
+    margin-top: 60px;
+    padding: 30px 0;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .footer .footer-line {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .footer .footer-line .dot {
+    width: 4px; height: 4px;
+    background: var(--cyan);
+    border-radius: 50%;
+    opacity: 0.5;
+  }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 1024px) {
+    .sidebar { display: none; }
+    .main-content { margin-left: 0; padding: 24px 20px 60px; }
+    .hero h1 { font-size: 30px; }
+    .steps-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ===== Glow Animation ===== */
+  @keyframes borderGlow {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.8; }
+  }
+  .glow-line {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cyan), var(--purple), transparent);
+    animation: borderGlow 3s ease-in-out infinite;
+    margin: 40px 0;
+    border-radius: 1px;
+  }
+
+  /* ===== Stat Bar ===== */
+  .stat-bar {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin: 16px 0;
+  }
+  .stat-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: rgba(0,212,255,0.04);
+    border: 1px solid rgba(0,212,255,0.1);
+    border-radius: 8px;
+    font-size: 12.5px;
+  }
+  .stat-item .stat-icon { font-size: 16px; }
+  .stat-item .stat-label { color: var(--text-muted); }
+  .stat-item .stat-value { color: var(--cyan); font-weight: 600; font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-radial"></div>
+
+<div class="app-layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">Documentation</div>
+      <div class="sidebar-title">发运单生成器</div>
+      <div class="sidebar-ver">v2.0 · User Guide</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-group-label">概览</div>
+      <a class="nav-item active" href="#quick-start">
+        <span class="nav-icon">🚀</span> 快速上手
+        <span class="nav-num">01</span>
+      </a>
+      <a class="nav-item" href="#interface">
+        <span class="nav-icon">🖥️</span> 界面一览
+        <span class="nav-num">02</span>
+      </a>
+
+      <div class="nav-group-label">核心功能</div>
+      <a class="nav-item" href="#config">
+        <span class="nav-icon">⚙️</span> 发运配置
+        <span class="nav-num">03</span>
+      </a>
+      <a class="nav-item" href="#batch">
+        <span class="nav-icon">📋</span> 批量与快捷操作
+        <span class="nav-num">04</span>
+      </a>
+
+      <div class="nav-group-label">参考</div>
+      <a class="nav-item" href="#shortcuts">
+        <span class="nav-icon">⌨️</span> 快捷键速查
+        <span class="nav-num">05</span>
+      </a>
+      <a class="nav-item" href="#context-menu">
+        <span class="nav-icon">📌</span> 右键菜单
+        <span class="nav-num">06</span>
+      </a>
+      <a class="nav-item" href="#undo-save">
+        <span class="nav-icon">💾</span> 撤销与保存
+        <span class="nav-num">07</span>
+      </a>
+      <a class="nav-item" href="#export">
+        <span class="nav-icon">📊</span> 计算与导出
+        <span class="nav-num">08</span>
+      </a>
+      <a class="nav-item" href="#faq">
+        <span class="nav-icon">❓</span> 常见问题
+        <span class="nav-num">09</span>
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main class="main-content">
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-badge">
+        <span class="dot"></span>
+        离线桌面工具 · 使用说明
+      </div>
+      <h1>发运单生成器</h1>
+      <p class="hero-desc">
+        导入 ERP 多级 BOM → 在树上维护发运配置 → 自动计算聚合 → 导出发运单。<br>
+        本说明只讲<strong>怎么用</strong>，按"快速上手 → 功能详解 → 速查表"组织。
+      </p>
+    </div>
+
+    <!-- Section 1: Quick Start -->
+    <div class="section" id="quick-start">
+      <div class="section-header">
+        <span class="section-num">01</span>
+        <span class="section-icon">🚀</span>
+        <span class="section-title">快速上手（四步出单）</span>
+      </div>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <span class="step-num">01</span>
+          <div class="step-action">📂 导入 BOM</div>
+          <div class="step-desc">选择 ERP 导出的 Excel/CSV，自动清洗并建成树</div>
+        </div>
+        <div class="step-card">
+          <span class="step-num">02</span>
+          <div class="step-action">🌲 维护发运配置</div>
+          <div class="step-desc">在左侧树上把需要单独发运的节点设为 <code>否</code> 并指定发运主体、方式</div>
+        </div>
+        <div class="step-card">
+          <span class="step-num">03</span>
+          <div class="step-action">🔢 计算 / 👁️ 预览</div>
+          <div class="step-desc">自动递归算数量、三重聚合，右侧出预览表</div>
+        </div>
+        <div class="step-card">
+          <span class="step-num">04</span>
+          <div class="step-action">📊 导出</div>
+          <div class="step-desc">导出 Excel / CSV，选保存位置，得到格式化发运单</div>
+        </div>
+      </div>
+
+      <div class="info-box info-tip">
+        <span class="info-icon">💡</span>
+        <span>中途随时 <strong>💾 保存</strong> 进度，下次 <strong>📂 加载</strong> 继续；做错了 <strong>↩️ 撤销</strong>。</span>
+      </div>
+    </div>
+
+    <!-- Section 2: Interface -->
+    <div class="section" id="interface">
+      <div class="section-header">
+        <span class="section-num">02</span>
+        <span class="section-icon">🖥️</span>
+        <span class="section-title">界面一览</span>
+      </div>
+
+      <div class="ui-mockup">
+        <div class="mockup-titlebar">
+          <span class="mockup-dot r"></span>
+          <span class="mockup-dot y"></span>
+          <span class="mockup-dot g"></span>
+          <span style="color:var(--text-muted);margin-left:8px;font-size:11px;">发运单生成器</span>
+        </div>
+        <div class="mockup-body"><span class="hl-cyan">┌──────────────────────────────────────────────────────────────┐</span>
+<span class="hl-cyan">│</span>  <span class="hl-white">工具栏：</span><span class="hl-green">导入BOM</span> · <span class="hl-green">批量设置</span> · <span class="hl-green">计算</span> · <span class="hl-green">预览</span> · <span class="hl-green">导出</span> · <span class="hl-green">保存/加载</span> · <span class="hl-green">撤销/恢复</span> …  <span class="hl-cyan">│</span>
+<span class="hl-cyan">├──────────────────────────────────────────────────────────────┤</span>
+<span class="hl-cyan">│</span>  <span class="hl-purple">BOM 树结构（左）</span>              <span class="hl-cyan">│</span>  <span class="hl-purple">发运单预览（右）</span>             <span class="hl-cyan">│</span>
+<span class="hl-cyan">│</span>  ☑ 物料号 名称 … 是否展开      <span class="hl-cyan">│</span>  序号 物料号 图号 数量 总重 …  <span class="hl-cyan">│</span>
+<span class="hl-cyan">│</span>     发运主体 发运方式 备注      <span class="hl-cyan">│</span>                              <span class="hl-cyan">│</span>
+<span class="hl-cyan">├──────────────────────────────────────────────────────────────┤</span>
+<span class="hl-cyan">│</span>  <span class="hl-yellow">状态栏：</span>节点数 · 已配置数 · 发运单元数 · 项目总重            <span class="hl-cyan">│</span>
+<span class="hl-cyan">└──────────────────────────────────────────────────────────────┘</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">📊</span> 树的列定义</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          选择 <code>☑</code> ｜ 物料号 ｜ 名称 ｜ 图号 ｜ 规格 ｜ 数量 ｜ 是否展开 ｜ 发运主体 ｜ 发运方式 ｜ 备注 ｜ 状态
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🎨</span> 节点颜色含义</div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>颜色</th><th>含义</th><th>条件</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="color-tag tag-green"><span class="swatch"></span>绿色</span></td>
+                <td>发运单元</td>
+                <td>是否展开=否，且已配齐发运主体+发运方式</td>
+              </tr>
+              <tr>
+                <td><span class="color-tag tag-yellow"><span class="swatch"></span>浅黄</span></td>
+                <td>边界节点</td>
+                <td>是否展开=否，但发运信息还没配齐</td>
+              </tr>
+              <tr>
+                <td><span class="color-tag tag-white"><span class="swatch"></span>白色</span></td>
+                <td>展开节点</td>
+                <td>是否展开=是，继续向下展开子节点</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 3: Config -->
+    <div class="section" id="config">
+      <div class="section-header">
+        <span class="section-num">03</span>
+        <span class="section-icon">⚙️</span>
+        <span class="section-title">发运配置怎么设</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🎯</span> 核心概念：什么是"发运单元"</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);margin-bottom:16px;line-height:1.8;">
+          一个节点成为发运单元（进入发运单统计），需<strong style="color:var(--cyan)">同时满足</strong>以下条件：
+        </p>
+        <div class="concept-grid">
+          <div class="concept-item">
+            <div class="c-icon">📋</div>
+            <div class="c-label">是否展开 = 否</div>
+            <div class="c-desc">标记为不再向下展开</div>
+          </div>
+          <div class="concept-item">
+            <div class="c-icon">🏢</div>
+            <div class="c-label">发运主体 ≠ 空</div>
+            <div class="c-desc">如 01-机头、98-捆装发运类</div>
+          </div>
+          <div class="concept-item">
+            <div class="c-icon">🚚</div>
+            <div class="c-label">发运方式 ≠ 空</div>
+            <div class="c-desc">A-散装 / B-打捆 / C-装箱 / D-特殊</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🔧</span> 三种设置入口</div>
+        <div class="entry-list">
+          <div class="entry-item">
+            <div class="e-icon">🖱️</div>
+            <div>
+              <div class="e-title">单击单元格</div>
+              <div class="e-desc">直接单击树上的「是否展开 / 发运主体 / 发运方式」列，弹出选择菜单。</div>
+            </div>
+          </div>
+          <div class="entry-item">
+            <div class="e-icon">📌</div>
+            <div>
+              <div class="e-title">右键菜单</div>
+              <div class="e-desc">右键节点 → 设置是否展开 / 设置发运主体 / 设置发运方式 / 详细配置…</div>
+            </div>
+          </div>
+          <div class="entry-item">
+            <div class="e-icon">✏️</div>
+            <div>
+              <div class="e-title">双击编辑备注</div>
+              <div class="e-desc">双击「备注」列直接在格内输入。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">⚡</span> 自动规则（省事）</div>
+        <div class="rule-list">
+          <div class="rule-item">
+            <span class="r-arrow">→</span>
+            <span>发运主体选 <code>98-捆装发运类</code> → 自动配 <code>B-打捆</code></span>
+          </div>
+          <div class="rule-item">
+            <span class="r-arrow">→</span>
+            <span>发运主体选 <code>99-整合装箱类</code> → 自动配 <code>C-装箱</code></span>
+          </div>
+          <div class="rule-item">
+            <span class="r-arrow">→</span>
+            <span>给"是否展开=是"的节点配上发运主体 → 自动改为"否"（成为发运单元）</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🔗</span> 联动与确认</div>
+        <div class="rule-list">
+          <div class="rule-item">
+            <span class="r-arrow" style="color:var(--yellow)">⚠</span>
+            <span>把节点设为 <code>"是"</code>（展开）会清空它已有的发运配置（会弹确认）。</span>
+          </div>
+          <div class="rule-item">
+            <span class="r-arrow" style="color:var(--yellow)">⚠</span>
+            <span>把节点设为 <code>"否"</code> 时，若它的子节点已配发运信息，会提示是否一并清除。</span>
+          </div>
+          <div class="rule-item">
+            <span class="r-arrow" style="color:var(--green)">✓</span>
+            <span>勾选子节点会自动取消其祖先节点的勾选（避免重复统计）。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 4: Batch -->
+    <div class="section" id="batch">
+      <div class="section-header">
+        <span class="section-num">04</span>
+        <span class="section-icon">📋</span>
+        <span class="section-title">批量与快捷操作</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">☑️</span> 勾选节点</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          点每行最左侧的 <code>☑</code>（支持 <kbd>Shift</kbd> 范围勾选、<kbd>Ctrl</kbd> 单选）。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">📋</span> 批量设置 <kbd>F1</kbd></div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          对已勾选节点一次性设置 是否展开 / 发运主体 / 方式 / 备注。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🖌️</span> 格式刷</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          右键某节点 <code>📋 复制格式</code> → 勾选目标节点 → <code>📋 粘贴格式到勾选节点</code><br>
+          快捷键：<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🔨</span> 节点操作</div>
+        <div class="entry-list">
+          <div class="entry-item">
+            <div class="e-icon">➕</div>
+            <div>
+              <div class="e-title">添加子物料</div>
+              <div class="e-desc">右键菜单操作，在当前节点下新增子物料。</div>
+            </div>
+          </div>
+          <div class="entry-item">
+            <div class="e-icon">✂️</div>
+            <div>
+              <div class="e-title">拆分物料</div>
+              <div class="e-desc">把一个物料拆成两个发运单元。</div>
+            </div>
+          </div>
+          <div class="entry-item">
+            <div class="e-icon">🗑️</div>
+            <div>
+              <div class="e-title">删除物料</div>
+              <div class="e-desc">右键菜单操作，删除选中节点。</div>
+            </div>
+          </div>
+          <div class="entry-item">
+            <div class="e-icon">🏷️</div>
+            <div>
+              <div class="e-title">发运主体定义</div>
+              <div class="e-desc">打开"发运主体定义"窗口，可增删改主体名称、管理预设（输送机发运/转载机发运等）。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="glow-line"></div>
+
+    <!-- Section 5: Shortcuts -->
+    <div class="section" id="shortcuts">
+      <div class="section-header">
+        <span class="section-num">05</span>
+        <span class="section-icon">⌨️</span>
+        <span class="section-title">快捷键速查</span>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div class="table-wrapper" style="border:none;">
+          <table>
+            <thead>
+              <tr><th style="width:220px;">快捷键</th><th>功能</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Z</kbd></td><td>撤销上一步</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Y</kbd></td><td>恢复（重做）</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>保存工作进度</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd></td><td>复制选中节点的发运格式</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>V</kbd></td><td>粘贴格式到勾选节点</td></tr>
+              <tr><td><kbd>F1</kbd></td><td>批量设置勾选节点</td></tr>
+              <tr><td><kbd>F2</kbd></td><td>勾选光标选中行</td></tr>
+              <tr><td><kbd>F3</kbd></td><td>取消光标选中行勾选</td></tr>
+              <tr><td><kbd>F4</kbd></td><td>应用自定义发运配置（先在 "⚡ F4快捷" 按钮里定义）</td></tr>
+              <tr><td><kbd>F5</kbd></td><td>勾选节点快速设为 <code>98-捆装发运类</code> + <code>B打捆</code></td></tr>
+              <tr><td><kbd>F6</kbd></td><td>勾选节点快速设为 <code>99-整合装箱类</code> + <code>C装箱</code></td></tr>
+              <tr><td><kbd>Y</kbd></td><td>当前节点设为 "是否展开 = 是"</td></tr>
+              <tr><td><kbd>N</kbd></td><td>当前节点设为 "是否展开 = 否"</td></tr>
+              <tr><td><kbd>Delete</kbd></td><td>删除勾选的节点</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="info-box info-warn">
+        <span class="info-icon">⚠️</span>
+        <span><kbd>Y</kbd> / <kbd>N</kbd> 只在树获得焦点时生效，在"项目名称"等输入框里打字不会被拦截。</span>
+      </div>
+    </div>
+
+    <!-- Section 6: Context Menu -->
+    <div class="section" id="context-menu">
+      <div class="section-header">
+        <span class="section-num">06</span>
+        <span class="section-icon">📌</span>
+        <span class="section-title">右键菜单一览</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🖱️</span> 在树节点上右键，可用以下操作：</div>
+        <div class="ctx-menu-visual">
+          <div class="ctx-item"><span class="ctx-icon">📂</span> 展开 / 折叠</div>
+          <div class="ctx-item"><span class="ctx-icon">✅</span> 设置是否展开 → 是</div>
+          <div class="ctx-item"><span class="ctx-icon">🚫</span> 设置是否展开 → 否</div>
+          <div class="ctx-item"><span class="ctx-icon">🏢</span> 设置发运主体</div>
+          <div class="ctx-item"><span class="ctx-icon">📦</span> 设置发运方式 → A/B/C/D</div>
+          <div class="ctx-item"><span class="ctx-icon">⚙️</span> 详细配置…</div>
+          <div class="ctx-item"><span class="ctx-icon">📂</span> 展开所有子节点</div>
+          <div class="ctx-item"><span class="ctx-icon">📁</span> 折叠所有子节点</div>
+          <div class="ctx-item"><span class="ctx-icon">✂️</span> 拆分物料</div>
+          <div class="ctx-item"><span class="ctx-icon">🗑️</span> 删除物料</div>
+          <div class="ctx-item"><span class="ctx-icon">➕</span> 添加子物料</div>
+          <div class="ctx-item"><span class="ctx-icon">📝</span> 设置备注到勾选节点</div>
+          <div class="ctx-item"><span class="ctx-icon">📋</span> 复制格式</div>
+          <div class="ctx-item"><span class="ctx-icon">📋</span> 粘贴格式到勾选节点</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 7: Undo & Save -->
+    <div class="section" id="undo-save">
+      <div class="section-header">
+        <span class="section-num">07</span>
+        <span class="section-icon">💾</span>
+        <span class="section-title">撤销、进度与防丢失</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">↩️</span> 撤销 / 恢复</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          <kbd>↩️</kbd> / <kbd>↪️</kbd> 按钮或 <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd>，最多保留 <strong style="color:var(--cyan)">5 步</strong>。<br>
+          设置发运配置、批量操作、添加/拆分/删除物料、格式刷等都可撤销。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">💾</span> 保存进度</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          <kbd>Ctrl</kbd>+<kbd>S</kbd> 把当前树和配置存成 Excel 进度文件；<code>📂 加载</code> 可恢复继续。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🔔</span> 未保存提醒</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          有改动未保存时，标题栏显示 <code>*未保存</code>；此时关窗会弹出"保存 / 不保存 / 取消"。
+        </p>
+      </div>
+
+      <div class="info-box info-tip">
+        <span class="info-icon">💡</span>
+        <span>导入新 BOM / 加载进度会开启新数据集，撤销栈自动清空（不会把旧数据撤销回来）。</span>
+      </div>
+    </div>
+
+    <!-- Section 8: Export -->
+    <div class="section" id="export">
+      <div class="section-header">
+        <span class="section-num">08</span>
+        <span class="section-icon">📊</span>
+        <span class="section-title">计算与导出</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🔢</span> 最终数量</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          子节点最终数量 = <strong style="color:var(--cyan)">自身用量 × 父节点最终数量</strong>（顶级节点数量为 1，逐级连乘）。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🔄</span> 三重聚合</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          按 <code>物料号 + 发运主体 + 发运方式 + 备注</code> 合并求和——同一物料在不同父节点下，只要发运配置相同，数量自动汇总。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">⚖️</span> 总重</div>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+          按各行 <code>数量 × 净重</code> 逐行求和。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">📤</span> 导出格式</div>
+        <div class="concept-grid">
+          <div class="concept-item">
+            <div class="c-icon">📊</div>
+            <div class="c-label">导出 Excel</div>
+            <div class="c-desc">带分组、边框、项目总重的格式化表格</div>
+          </div>
+          <div class="concept-item">
+            <div class="c-icon">📄</div>
+            <div class="c-label">导出 CSV</div>
+            <div class="c-desc">UTF-8-BOM 编码，Excel 可直接打开不乱码</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="glow-line"></div>
+
+    <!-- Section 9: FAQ -->
+    <div class="section" id="faq">
+      <div class="section-header">
+        <span class="section-num">09</span>
+        <span class="section-icon">❓</span>
+        <span class="section-title">常见问题</span>
+      </div>
+
+      <div class="faq-item open">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <span class="q-badge">Q</span>
+          <span>导入后某些节点没进发运单？</span>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div class="faq-a">
+          只有"是否展开=否 且 配齐发运主体+方式"的<strong style="color:var(--green)">绿色节点</strong>才进发运单。检查该节点是否为展开节点（白色）或边界节点（浅黄、未配齐）。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <span class="q-badge">Q</span>
+          <span>想让某个物料单独发运？</span>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div class="faq-a">
+          把它的"是否展开"设为"否"，再指定发运主体和发运方式即可（选 98/99 会自动配方式）。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <span class="q-badge">Q</span>
+          <span>一个物料要拆成两批发运？</span>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div class="faq-a">
+          右键该节点 → ✂️ 拆分物料，分别输入数量、发运主体和方式。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <span class="q-badge">Q</span>
+          <span>CSV 导入报错或乱码？</span>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div class="faq-a">
+          程序已自动尝试 UTF-8 / GBK / GB18030 编码。仍失败请确认文件确为 ERP 导出的 BOM 文件，且含"子物料号、父物料号、数量、子物料净重"等必需列。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <span class="q-badge">Q</span>
+          <span>发运主体名称想自定义？</span>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div class="faq-a">
+          点工具栏 🏷️ 发运主体，在定义窗口增删改名称，或用预设管理（保存为预设 / 新建 / 置为当前）。
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div class="footer-line">
+        <span>发运单生成器</span>
+        <span class="dot"></span>
+        <span>使用说明</span>
+        <span class="dot"></span>
+        <span>离线桌面工具</span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  // FAQ toggle
+  function toggleFaq(el) {
+    const item = el.parentElement;
+    item.classList.toggle('open');
+  }
+
+  // Sidebar active state on scroll
+  const sections = document.querySelectorAll('.section[id]');
+  const navItems = document.querySelectorAll('.nav-item');
+
+  function updateActiveNav() {
+    let current = '';
+    sections.forEach(section => {
+      const rect = section.getBoundingClientRect();
+      if (rect.top <= 120) {
+        current = section.getAttribute('id');
+      }
+    });
+    navItems.forEach(item => {
+      item.classList.remove('active');
+      if (item.getAttribute('href') === '#' + current) {
+        item.classList.add('active');
+      }
+    });
+  }
+
+  window.addEventListener('scroll', updateActiveNav);
+  updateActiveNav();
+
+  // Smooth scroll for nav items
+  navItems.forEach(item => {
+    item.addEventListener('click', function(e) {
+      e.preventDefault();
+      const targetId = this.getAttribute('href').substring(1);
+      const target = document.getElementById(targetId);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  // Intersection Observer for fade-in animations
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.card, .step-card, .faq-item').forEach(el => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(16px)';
+    el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+    observer.observe(el);
+  });
+</script>
+
+</body>
+</html>
+```

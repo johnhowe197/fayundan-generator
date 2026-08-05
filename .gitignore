@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 测试数据（不提交到仓库）
+_data/
+
+# 日志文件
+*.log
+
+# 进度文件（用户个人数据）
+progress/*.xlsx
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 环境
+.env
+.venv/
+venv/
+env/

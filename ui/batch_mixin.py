@@ -117,11 +117,11 @@ class BatchMixin:
                         continue
                     if entity:
                         node.shipping_entity = entity
-                        # 应用自动规则（98→B打捆，99→C装箱）
-                        EntityConfigManager.apply_auto_rules(node)
-                    elif method:
-                        # 只设置了发运方式，不应用自动规则
+                    if method:
                         node.shipping_method = method
+                    # 主体和方式可同时生效；仅 98→B打捆、99→C装箱 时自动规则覆盖手动方式
+                    if entity:
+                        EntityConfigManager.apply_auto_rules(node)
                 # 备注：展开节点不维护备注，不写入
                 if remark and node.expand_status != '是':
                     node.remark = remark

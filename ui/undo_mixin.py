@@ -197,7 +197,12 @@ class UndoMixin:
         if self.tree_builder.root:
             self.tree_builder._recompute_subtree(self.tree_builder.root)
 
-        # 8. 刷新 UI
+        # 8. 清理撤销/恢复时可能残留的 _is_hidden 标记（如有）
+        for node in self.tree_builder.all_nodes:
+            if hasattr(node, '_is_hidden'):
+                delattr(node, '_is_hidden')
+
+        # 9. 刷新 UI
         self.refresh_tree(preserve_expand_state=True)
         self.update_status_bar()
 
@@ -223,6 +228,10 @@ class UndoMixin:
         self._undo_stack.pop()
         self._redo_stack.append(current_state)
         self._update_undo_redo_buttons()
+        # 撤销后检查 dirty 标记：如果撤销到初始状态（栈为空），清除 dirty 标记
+        if len(self._undo_stack) == 0 and self._dirty:
+            self._dirty = False
+            self._update_title()
         self.statusBar().showMessage(f'已撤销（还可撤销 {len(self._undo_stack)} 步）')
 
     def redo(self):

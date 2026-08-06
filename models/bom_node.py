@@ -175,7 +175,14 @@ class BOMNode:
         units = []
 
         # 检查节点是否被隐藏（父节点"是否展开=否"）
-        is_hidden = getattr(self, '_is_hidden', False)
+        # 使用动态判断而非 _is_hidden 标记，确保结果始终准确
+        is_hidden = False
+        current = self
+        while current.parent:
+            if current.parent.expand_status == '否':
+                is_hidden = True
+                break
+            current = current.parent
 
         if not is_hidden and self.is_shipping_unit:
             units.append(self)

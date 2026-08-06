@@ -97,6 +97,9 @@ class BatchMixin:
             snapshot = self._save_state_snapshot()
             count = 0
             skipped = 0
+            # 导入自动规则模块
+            from core.entity_config import EntityConfigManager
+            
             for node in checked_nodes:
                 # 设置展开状态
                 if expand:
@@ -114,7 +117,10 @@ class BatchMixin:
                         continue
                     if entity:
                         node.shipping_entity = entity
-                    if method:
+                        # 应用自动规则（98→B打捆，99→C装箱）
+                        EntityConfigManager.apply_auto_rules(node)
+                    elif method:
+                        # 只设置了发运方式，不应用自动规则
                         node.shipping_method = method
                 # 备注：展开节点不维护备注，不写入
                 if remark and node.expand_status != '是':
@@ -146,7 +152,9 @@ class BatchMixin:
             if item.checkState(0) == Qt.Checked:
                 node = item.data(1, Qt.UserRole)
                 if node:
-                    checked_nodes.append(node)
+                    # 双重检查：确保节点确实不是隐藏的（使用 _is_node_hidden 判断）
+                    if not self._is_node_hidden(node):
+                        checked_nodes.append(node)
             for i in range(item.childCount()):
                 check_item(item.child(i))
 

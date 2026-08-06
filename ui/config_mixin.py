@@ -135,13 +135,12 @@ class ConfigMixin:
         value = item.text(7)
         entity_code = value.split('-')[0] if '-' in value else value
         node.shipping_entity = entity_code
-        # 98-捆装发运类自动设B打捆，99-整合装箱类自动设C装箱
-        if entity_code == '98':
-            node.shipping_method = 'B'
-            item.setText(8, 'B-打捆')
-        elif entity_code == '99':
-            node.shipping_method = 'C'
-            item.setText(8, 'C-装箱')
+        # 应用自动规则（98→B打捆, 99→C装箱）
+        from core.entity_config import EntityConfigManager
+        EntityConfigManager.apply_auto_rules(node)
+        # 更新发运方式显示
+        if node.shipping_method:
+            item.setText(8, self._get_method_display_name(node.shipping_method))
         if entity_code and node.expand_status == '是':
             node.expand_status = '否'
             item.setText(6, '否')
@@ -407,10 +406,9 @@ class ConfigMixin:
         """
         self._save_state()
         node.shipping_entity = entity
-        if entity == '98':
-            node.shipping_method = 'B'
-        elif entity == '99':
-            node.shipping_method = 'C'
+        # 应用自动规则（98→B打捆，99→C装箱）
+        from core.entity_config import EntityConfigManager
+        EntityConfigManager.apply_auto_rules(node)
         if node.expand_status == '是':
             node.expand_status = '否'
         node.calculate_final_quantity()
@@ -453,7 +451,9 @@ class ConfigMixin:
         self._save_state()
         for node in checked:
             node.shipping_entity = entity_code
-            node.shipping_method = method_code
+            # 应用自动规则（98→B打捆，99→C装箱）
+            from core.entity_config import EntityConfigManager
+            EntityConfigManager.apply_auto_rules(node)
             node.expand_status = '否'
         self.refresh_tree(preserve_expand_state=True)
         self.update_status_bar()

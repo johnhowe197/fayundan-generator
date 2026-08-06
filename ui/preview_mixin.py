@@ -25,17 +25,16 @@ class PreviewMixin:
         try:
             self.statusBar().showMessage('正在计算...')
 
-            # 标记被隐藏的节点
-            for node in self.tree_builder.all_nodes:
-                node._is_hidden = self._is_node_hidden(node)
-
             self.calculator = ShippingCalculator(self.tree_builder)
             self.current_shipping_order = self.calculator.generate_shipping_order()
 
             self._update_total_weight()
 
-            visible_count = len([n for n in self.tree_builder.all_nodes if not getattr(n, '_is_hidden', False)])
-            hidden_count = len([n for n in self.tree_builder.all_nodes if getattr(n, '_is_hidden', False)])
+            # 直接使用 _is_node_hidden() 判断，不再维护动态 _is_hidden 标记
+            visible_count = len([n for n in self.tree_builder.all_nodes 
+                                if not self._is_node_hidden(n)])
+            hidden_count = len([n for n in self.tree_builder.all_nodes 
+                               if self._is_node_hidden(n)])
 
             self.update_status_bar()
             self.statusBar().showMessage('计算完成！')

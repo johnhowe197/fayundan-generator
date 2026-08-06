@@ -1,36 +1,29 @@
-# Python
+```gitignore
+# Python cache files
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-*.egg-info/
-*.egg
-dist/
-build/
-*.spec
+*.pyc
+*.pyo
+*.pyd
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# Environment variables
+.env
+.env.local
+.env.*
 
-# 测试数据（不提交到仓库）
-_data/
-
-# 日志文件
+# Logs
 *.log
 
-# 进度文件（用户个人数据）
-progress/*.xlsx
-
-# 操作系统
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# 环境
-.env
+# Dependencies
 .venv/
 venv/
-env/
+.env/
+
+# Editors
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
+build/
+target/
+```

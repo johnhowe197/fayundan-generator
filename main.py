@@ -15,11 +15,12 @@ from pathlib import Path
 
 # 设置控制台编码
 import io
+_stdout_wrap_error = None
 try:
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-except:
-    pass
+except Exception as e:
+    _stdout_wrap_error = e
 
 # 添加当前目录到Python路径
 app_dir = Path(__file__).parent
@@ -45,6 +46,9 @@ logging.basicConfig(
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.DEBUG)
 logging.getLogger().addHandler(console_handler)
+
+if _stdout_wrap_error is not None:
+    logging.debug(f'控制台输出编码包装失败（不影响主流程）: {_stdout_wrap_error}')
 
 
 def main():
@@ -94,7 +98,7 @@ def main():
                     f"详细信息已记录到 error.log"
                 )
             except Exception:
-                pass
+                logging.debug('未处理异常弹窗显示失败', exc_info=True)
 
         sys.excepthook = exception_hook
 
@@ -137,8 +141,8 @@ def main():
                 "启动失败",
                 f"程序启动失败:\n\n{type(e).__name__}: {str(e)}"
             )
-        except:
-            pass
+        except Exception:
+            logging.debug('启动失败弹窗显示失败', exc_info=True)
 
         raise
 

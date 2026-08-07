@@ -38,4 +38,8 @@ htmlcov/
 dist/
 build/
 *.egg-info/
-```
+
+# 本地业务/运行时数据（ERP 原始数据、导出、进度文件，敏感数据不上传 GitHub）
+_data/
+output/
+progress/

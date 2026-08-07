@@ -550,7 +550,11 @@ class MainWindow(QMainWindow, TreeMixin, ConfigMixin, BatchMixin,
         _y_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         _n_shortcut = QShortcut(QKeySequence('N'), self.tree_widget, lambda: self._quick_set_expand('否'))
         _n_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        QShortcut(QKeySequence('Delete'), self, self._delete_key_handler)
+        # Delete 快捷键限定为树控件自身持有焦点时生效（WidgetShortcut）：
+        # 单元格编辑器/项目名称输入框聚焦时按 Delete 只删字符，不被劫持。
+        # 不用 WidgetWithChildrenShortcut——单元格编辑器是树子控件，仍会命中快捷键并吞键。
+        self._delete_shortcut = QShortcut(QKeySequence('Delete'), self.tree_widget, self._delete_key_handler)
+        self._delete_shortcut.setContext(Qt.WidgetShortcut)
         QShortcut(QKeySequence.Save, self, self.save_progress)
         QShortcut(QKeySequence('Ctrl+Shift+C'), self, self._shortcut_copy_format)
         QShortcut(QKeySequence('Ctrl+Shift+V'), self, self._paste_format_to_checked)

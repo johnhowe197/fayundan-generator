@@ -43,3 +43,10 @@ build/
 _data/
 output/
 progress/
+# 本地不入库：智能体配置（工具依赖根目录定位，仅排除不移动）
+.agents/
+.claude/
+CLAUDE.md
+
+# 本地整理文件夹（归档/打包配置/开发编排文档）
+_local/

@@ -23,21 +23,21 @@ class PreviewMixin:
             return
 
         try:
-            self.statusBar().showMessage('正在计算...')
+            # 忙碌状态：等待光标 + 按钮禁用防重入；弹窗在 with 外
+            with self._busy('正在计算...'):
+                self.calculator = ShippingCalculator(self.tree_builder)
+                self.current_shipping_order = self.calculator.generate_shipping_order()
 
-            self.calculator = ShippingCalculator(self.tree_builder)
-            self.current_shipping_order = self.calculator.generate_shipping_order()
+                self._update_total_weight()
 
-            self._update_total_weight()
+                # 直接使用 _is_node_hidden() 判断，不再维护动态 _is_hidden 标记
+                visible_count = len([n for n in self.tree_builder.all_nodes 
+                                    if not self._is_node_hidden(n)])
+                hidden_count = len([n for n in self.tree_builder.all_nodes 
+                                   if self._is_node_hidden(n)])
 
-            # 直接使用 _is_node_hidden() 判断，不再维护动态 _is_hidden 标记
-            visible_count = len([n for n in self.tree_builder.all_nodes 
-                                if not self._is_node_hidden(n)])
-            hidden_count = len([n for n in self.tree_builder.all_nodes 
-                               if self._is_node_hidden(n)])
-
-            self.update_status_bar()
-            self.statusBar().showMessage('计算完成！')
+                self.update_status_bar()
+                self.statusBar().showMessage('计算完成！')
             QMessageBox.information(self, '成功',
                 f'计算完成！\n\n'
                 f'共 {len(self.current_shipping_order)} 条发运记录\n'
@@ -250,15 +250,18 @@ class PreviewMixin:
                 total_weight = self.current_shipping_order['总重(kg)'].sum() if not self.current_shipping_order.empty else 0
 
                 exporter = ShippingExporter()
-                exporter.export_to_excel(
-                    self.current_shipping_order, file_path,
-                    project_name=project_name,
-                    project_drawing=project_drawing,
-                    construction_no=construction_no,
-                    author=author,
-                    reviewer=reviewer,
-                    total_weight=total_weight
-                )
+                # 忙碌状态仅包写文件；QFileDialog 在 with 前（主线程模态），
+                # "是否打开"询问与 os.startfile 在 with 外
+                with self._busy('正在导出Excel...'):
+                    exporter.export_to_excel(
+                        self.current_shipping_order, file_path,
+                        project_name=project_name,
+                        project_drawing=project_drawing,
+                        construction_no=construction_no,
+                        author=author,
+                        reviewer=reviewer,
+                        total_weight=total_weight
+                    )
                 self.statusBar().showMessage(f'导出成功: {file_path}')
 
                 reply = QMessageBox.question(
@@ -294,7 +297,9 @@ class PreviewMixin:
         if file_path:
             try:
                 exporter = ShippingExporter()
-                exporter.export_to_csv(self.current_shipping_order, file_path)
+                # 忙碌状态仅包写文件；QFileDialog 在 with 前（主线程模态）
+                with self._busy('正在导出CSV...'):
+                    exporter.export_to_csv(self.current_shipping_order, file_path)
                 self.statusBar().showMessage(f'导出成功: {file_path}')
                 QMessageBox.information(self, '成功', f'发运单已导出到:\n{file_path}')
             except Exception as e:

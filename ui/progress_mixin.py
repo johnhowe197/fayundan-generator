@@ -62,23 +62,25 @@ class ProgressMixin:
         """执行BOM导入"""
         try:
             from core.bom_parser import BOMParser
-            self.statusBar().showMessage('正在导入BOM数据...')
 
             self.current_shipping_order = None
 
-            parser = BOMParser()
-            df = parser.parse(file_path)
+            # 忙碌状态：等待光标 + 按钮禁用防重入；弹窗移到 with 外，
+            # 避免等待光标罩在对话框上
+            with self._busy('正在导入BOM数据...'):
+                parser = BOMParser()
+                df = parser.parse(file_path)
 
-            self.tree_builder.build_from_dataframe(df)
+                self.tree_builder.build_from_dataframe(df)
 
-            # 切换数据集：清空撤销/恢复栈，避免旧数据快照被撤销复活进新数据集
-            self._clear_undo_redo()
+                # 切换数据集：清空撤销/恢复栈，避免旧数据快照被撤销复活进新数据集
+                self._clear_undo_redo()
 
-            self.refresh_tree()
-            self.update_status_bar()
-            self._current_file = file_path
-            self._dirty = True
-            self._update_title()
+                self.refresh_tree()
+                self.update_status_bar()
+                self._current_file = file_path
+                self._dirty = True
+                self._update_title()
             self.statusBar().showMessage(f'BOM数据导入成功: {file_path}')
             QMessageBox.information(self, '成功', f'BOM数据导入成功！\n\n'
                                     f'总节点数: {len(self.tree_builder.all_nodes)}')

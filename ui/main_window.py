@@ -9,13 +9,14 @@
 """
 
 import sys
+from contextlib import contextmanager
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QTreeWidget, QTreeWidgetItem,
                              QTableWidget, QTableWidgetItem, QFileDialog,
                              QMessageBox, QSplitter, QGroupBox, QStatusBar,
                              QHeaderView, QDialog, QDialogButtonBox,
                              QFormLayout, QLabel, QLineEdit, QComboBox,
-                             QMenu, QAction, QInputDialog)
+                             QMenu, QAction, QInputDialog, QApplication)
 from PyQt5.QtCore import Qt, QSize, QEvent
 from PyQt5.QtGui import QIcon, QFont, QColor, QTextOption
 
@@ -124,6 +125,29 @@ class MainWindow(QMainWindow, TreeMixin, ConfigMixin, BatchMixin,
         # 都会把事故前的快照挤出栈外，导致撤销永远回不到事故前状态。
         self._max_undo = 30
         self.init_ui()
+
+    @contextmanager
+    def _busy(self, message):
+        """耗时操作忙碌状态：状态栏提示 + 等待光标 + 禁用操作按钮防重入。
+        用深度计数支持嵌套（export 内部复用 calculate）。"""
+        self._busy_depth = getattr(self, '_busy_depth', 0) + 1
+        outermost = (self._busy_depth == 1)
+        if outermost:
+            self.statusBar().showMessage(message)
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            for btn in self._action_buttons:
+                btn.setEnabled(False)
+            # 仅在操作前刷新一次，确保状态文字与光标先绘制；
+            # 操作期间绝不 processEvents，避免事件重入半完成状态
+            QApplication.processEvents()
+        try:
+            yield
+        finally:
+            self._busy_depth -= 1
+            if outermost:
+                QApplication.restoreOverrideCursor()
+                for btn in self._action_buttons:
+                    btn.setEnabled(True)
 
     def closeEvent(self, event):
         """关闭窗口时检查未保存"""
@@ -484,6 +508,13 @@ class MainWindow(QMainWindow, TreeMixin, ConfigMixin, BatchMixin,
         progress_layout.addStretch()
 
         parent_layout.addLayout(progress_layout)
+
+        # 忙碌状态需禁用的数据操作按钮（防耗时操作期间重复点击）
+        self._action_buttons = [self.btn_import_bom, self.btn_batch_config,
+            self.btn_delete_checked, self.btn_check_selected, self.btn_uncheck_selected,
+            self.btn_calculate, self.btn_preview, self.btn_validate,
+            self.btn_export_excel, self.btn_export_csv,
+            self.btn_save_progress, self.btn_load_progress]
 
     def create_tree_panel(self) -> QWidget:
         """创建BOM树结构面板"""

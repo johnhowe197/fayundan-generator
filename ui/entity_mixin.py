@@ -344,9 +344,13 @@ class EntityMixin:
 
         entity_mgr = EntityConfigManager()
         if entity_mgr.create_preset(preset_name):
+            # blockSignals 防止刷新下拉时 currentTextChanged 触发
+            # _load_preset_to_table 覆盖表格中未保存的编辑
+            preset_combo.blockSignals(True)
             preset_combo.clear()
             preset_combo.addItems(entity_mgr.get_preset_names())
             preset_combo.setCurrentText(preset_name)
+            preset_combo.blockSignals(False)
             QMessageBox.information(self, '成功', f'已创建新预设 "{preset_name}"')
         elif entity_mgr.get_preset(preset_name) is not None:
             QMessageBox.warning(self, '警告', f'预设 "{preset_name}" 已存在！')
@@ -380,11 +384,16 @@ class EntityMixin:
             return
 
         if entity_mgr.delete_preset(preset_name):
+            # blockSignals 防止刷新下拉时 currentTextChanged 触发
+            # _load_preset_to_table 覆盖表格中未保存的编辑（删除后
+            # setCurrentText 的名称可能已不在列表中，附带警告弹窗）
+            preset_combo.blockSignals(True)
             preset_combo.clear()
             preset_combo.addItems(entity_mgr.get_preset_names())
             current = entity_mgr.get_current_preset_name()
             if current:
                 preset_combo.setCurrentText(current)
+            preset_combo.blockSignals(False)
             QMessageBox.information(self, '成功', f'已删除预设 "{preset_name}"')
 
     def _reset_presets(self):

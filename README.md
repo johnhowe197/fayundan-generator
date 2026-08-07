@@ -119,8 +119,12 @@ python main.py
 # 安装PyInstaller
 pip install pyinstaller
 
-# 打包
-pyinstaller --name="发运单生成器" --windowed --onefile main.py
+# 打包（推荐）：使用本地打包配置，精简依赖、导出名 ShippingOrderGenerator
+# 配置位于 _local/packaging/（本地整理文件夹，不入库）
+pyinstaller _local/packaging/发运单生成器v2.3.spec
+
+# 或简单命令行打包：
+# pyinstaller --name="发运单生成器" --windowed --onefile main.py
 ```
 
 ---

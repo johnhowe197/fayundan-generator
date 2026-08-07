@@ -23,8 +23,9 @@ python main.py
 # 安装依赖
 pip install -r requirements.txt
 
-# 打包成EXE
-pyinstaller --name="发运单生成器" --windowed --onefile main.py
+# 打包成EXE（推荐：本地打包配置 _local/packaging/发运单生成器v2.3.spec）
+pyinstaller _local/packaging/发运单生成器v2.3.spec
+# 简单命令行：pyinstaller --name="发运单生成器" --windowed --onefile main.py
 
 # 运行预提交验证
 python pre_commit_verify.py

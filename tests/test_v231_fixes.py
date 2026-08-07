@@ -11,13 +11,13 @@ v2.3.1 发运主体配置"保存后丢失"修复回归测试
   不关闭对话框，绝不谎报成功；
 - 新建预设失败时区分"已存在"与"写入失败"。
 
-用法：python test_v231_fixes.py
+用法：python tests/test_v231_fixes.py
 """
 import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 passed = 0
 failed = 0

@@ -10,14 +10,14 @@ v2.3 修复针对性回归测试
 补充说明：pre_commit_verify.py 只检查符号存在性，无法发现上述值格式/路径类
 缺陷，故本文件作为针对性的行为级回归测试。
 
-用法：python test_v23_fixes.py
+用法：python tests/test_v23_fixes.py
 """
 import sys
 import tempfile
 from pathlib import Path
 
 # 确保能导入项目模块
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 passed = 0
 failed = 0
@@ -68,8 +68,8 @@ from utils.helpers import get_writable_app_dir, get_bundle_dir, is_frozen, seed_
 check("开发环境判定为非 frozen", is_frozen() is False)
 wdir = get_writable_app_dir()
 check("可写应用目录存在", wdir.exists(), str(wdir))
-check("开发环境可写目录==项目根目录", wdir == Path(__file__).parent, f"{wdir} vs {Path(__file__).parent}")
-check("开发环境只读资源目录==项目根目录", get_bundle_dir() == Path(__file__).parent)
+check("开发环境可写目录==项目根目录", wdir == Path(__file__).resolve().parent.parent, f"{wdir} vs {Path(__file__).resolve().parent.parent}")
+check("开发环境只读资源目录==项目根目录", get_bundle_dir() == Path(__file__).resolve().parent.parent)
 
 # 播种逻辑：目标缺失则复制；目标存在则不覆盖（保护用户数据）
 with tempfile.TemporaryDirectory() as td:

@@ -13,12 +13,12 @@ v2.4 粘贴格式与"是否展开"修复回归测试
 - 批量操作（勾选收集/全选/反选）排除隐藏节点；
 - refresh_tree 展开状态恢复改以稳定 uid 为键（同物料号多实例不串位）。
 
-用法：python test_v24_paste_expand_fixes.py
+用法：python tests/test_v24_paste_expand_fixes.py
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 passed = 0
 failed = 0

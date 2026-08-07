@@ -10,12 +10,12 @@ v2.5 界面交互修复回归测试
 - 问题6：BatchConfigDialog 死代码已删除
 （问题4 _busy 忙碌状态以行为验证为主，手工冒烟覆盖）
 
-用法：python test_v25_ui_fixes.py
+用法：python tests/test_v25_ui_fixes.py
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 passed = 0
 failed = 0

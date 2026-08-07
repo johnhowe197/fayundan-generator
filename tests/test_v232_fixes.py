@@ -16,12 +16,12 @@ v2.5 拆分挂载与顶级删除修复回归测试
 
 另覆盖配套修复：拆分顶级叶子节点改为明确禁止（原实现静默丢失第二部分）。
 
-用法：python test_v25_split_delete_fixes.py
+用法：python tests/test_v232_fixes.py
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 passed = 0
 failed = 0

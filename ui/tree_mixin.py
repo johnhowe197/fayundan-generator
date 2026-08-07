@@ -43,31 +43,35 @@ class TreeMixin:
         except TypeError:
             pass
 
-        if self.tree_builder.root:
-            self._add_tree_item(self.tree_widget, self.tree_builder.root)
-
-            # 恢复展开状态
-            if preserve_expand_state and expanded_nodes:
-                def restore_expanded(item):
-                    node = item.data(1, Qt.UserRole)
-                    if node and node.uid in expanded_nodes:
-                        item.setExpanded(True)
-                    for i in range(item.childCount()):
-                        restore_expanded(item.child(i))
-
-                for i in range(self.tree_widget.topLevelItemCount()):
-                    restore_expanded(self.tree_widget.topLevelItem(i))
-            else:
-                # 默认折叠所有节点，只展开顶级节点
-                self.tree_widget.collapseAll()
-                self.tree_widget.expandToDepth(0)
-
-        # 重新连接信号
+        # 建树与恢复展开放入 try/finally：即使中途异常也确保信号重连，
+        # 否则 itemChanged 永久断开、所有列编辑静默失效（下次 refresh 自愈）
         try:
-            self.tree_widget.itemChanged.disconnect()
-        except TypeError:
-            pass
-        self.tree_widget.itemChanged.connect(self.on_item_changed)
+            if self.tree_builder.root:
+                self._add_tree_item(self.tree_widget, self.tree_builder.root)
+
+                # 恢复展开状态
+                if preserve_expand_state and expanded_nodes:
+                    def restore_expanded(item):
+                        node = item.data(1, Qt.UserRole)
+                        if node and node.uid in expanded_nodes:
+                            item.setExpanded(True)
+                        for i in range(item.childCount()):
+                            restore_expanded(item.child(i))
+
+                    for i in range(self.tree_widget.topLevelItemCount()):
+                        restore_expanded(self.tree_widget.topLevelItem(i))
+                else:
+                    # 默认折叠所有节点，只展开顶级节点
+                    self.tree_widget.collapseAll()
+                    self.tree_widget.expandToDepth(0)
+        finally:
+            # 重连前先带 TypeError 守卫 disconnect，防止重复连接导致
+            # on_item_changed 双触发、_save_state 泛洪撤销栈
+            try:
+                self.tree_widget.itemChanged.disconnect()
+            except TypeError:
+                pass
+            self.tree_widget.itemChanged.connect(self.on_item_changed)
 
     def _add_tree_item(self, parent, node: BOMNode):
         """

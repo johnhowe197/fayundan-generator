@@ -268,6 +268,11 @@ class MainWindow(QMainWindow, TreeMixin, ConfigMixin, BatchMixin,
                         if in_checkbox:
                             modifiers = event.modifiers()
 
+                            # 勾选变更前保存撤销快照：覆盖普通点击/Shift区间/Ctrl
+                            # 三条路径及 _uncheck_ancestors 父子联动的全部副作用，
+                            # 并统一标记未保存（_save_state 内部置 _dirty 并更新标题）
+                            self._save_state()
+
                             if modifiers & Qt.ShiftModifier:
                                 if self.last_clicked_item:
                                     self._check_range(self.last_clicked_item, item, True)

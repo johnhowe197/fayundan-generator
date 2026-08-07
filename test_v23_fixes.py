@@ -132,10 +132,17 @@ class FakeStatusBar:
         self.message = msg
 
 
+class FakeTreeWidget:
+    """树控件桩：撤销快照的勾选集合为空（UndoMixin 测试无需真实树）"""
+    def topLevelItemCount(self):
+        return 0
+
+
 class FakeWindow(UndoMixin):
     """无 Qt 依赖的最小宿主，仅驱动撤销逻辑"""
     def __init__(self):
         self.tree_builder = TreeBuilder()
+        self.tree_widget = FakeTreeWidget()
         self._undo_stack = []
         self._redo_stack = []
         self._max_undo = 5

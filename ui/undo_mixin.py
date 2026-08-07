@@ -16,6 +16,7 @@
 """
 
 from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtCore import Qt
 
 from models.bom_node import BOMNode
 
@@ -66,7 +67,38 @@ class UndoMixin:
             'node_data': node_data,
             'tree_structure': tree_structure,
             'root_key': root_key,
+            # 勾选状态是纯 UI 状态（不在 BOMNode 上），以 uid 集合随快照保存，
+            # 供撤销/恢复时还原树的勾选显示
+            'checked_uids': self._collect_checked_uids(),
         }
+
+    def _collect_checked_uids(self):
+        """收集当前树中所有勾选项的节点 uid 集合（含隐藏项，保持状态完整还原）"""
+        checked = set()
+
+        def walk(item):
+            if item.checkState(0) == Qt.Checked:
+                node = item.data(1, Qt.UserRole)
+                if node:
+                    checked.add(node.uid)
+            for i in range(item.childCount()):
+                walk(item.child(i))
+
+        for i in range(self.tree_widget.topLevelItemCount()):
+            walk(self.tree_widget.topLevelItem(i))
+        return checked
+
+    def _apply_checked_uids(self, checked_uids):
+        """按 uid 集合恢复树的勾选显示（refresh_tree 重建后调用）"""
+        def walk(item):
+            node = item.data(1, Qt.UserRole)
+            if node and node.uid in checked_uids:
+                item.setCheckState(0, Qt.Checked)
+            for i in range(item.childCount()):
+                walk(item.child(i))
+
+        for i in range(self.tree_widget.topLevelItemCount()):
+            walk(self.tree_widget.topLevelItem(i))
 
     def _save_state(self):
         """保存当前状态到撤销栈（完整快照：节点数据 + 树结构）"""
@@ -205,6 +237,13 @@ class UndoMixin:
         # 9. 刷新 UI
         self.refresh_tree(preserve_expand_state=True)
         self.update_status_bar()
+
+        # 10. 恢复勾选状态（None 兼容旧格式快照：保持原行为=全部未勾选）。
+        #      refresh_tree 已重连 itemChanged；setCheckState 发 column=0 事件，
+        #      on_item_changed 对 column==0 直接 return，无副作用、无循环。
+        checked_uids = state.get('checked_uids')
+        if checked_uids is not None:
+            self._apply_checked_uids(checked_uids)
 
     def undo(self):
         """撤销上一步操作

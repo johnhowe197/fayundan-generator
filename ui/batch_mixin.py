@@ -192,11 +192,15 @@ class BatchMixin:
     def check_selected_items(self):
         """对选中的行进行勾选（自动取消祖先节点勾选）"""
         selected_items = self.tree_widget.selectedItems()
+        current_item = self.tree_widget.currentItem()
+        # 无目标项直接返回，避免产生空快照
+        if not selected_items and not current_item:
+            return
+        # 勾选变更前保存撤销快照并标记未保存（与 eventFilter 勾选路径一致）
+        self._save_state()
         if not selected_items:
-            current_item = self.tree_widget.currentItem()
-            if current_item:
-                current_item.setCheckState(0, Qt.Checked)
-                self._uncheck_ancestors(current_item)
+            current_item.setCheckState(0, Qt.Checked)
+            self._uncheck_ancestors(current_item)
         else:
             for item in selected_items:
                 item.setCheckState(0, Qt.Checked)
@@ -206,10 +210,14 @@ class BatchMixin:
     def uncheck_selected_items(self):
         """取消选中行的勾选"""
         selected_items = self.tree_widget.selectedItems()
+        current_item = self.tree_widget.currentItem()
+        # 无目标项直接返回，避免产生空快照
+        if not selected_items and not current_item:
+            return
+        # 勾选变更前保存撤销快照并标记未保存（与 eventFilter 勾选路径一致）
+        self._save_state()
         if not selected_items:
-            current_item = self.tree_widget.currentItem()
-            if current_item:
-                current_item.setCheckState(0, Qt.Unchecked)
+            current_item.setCheckState(0, Qt.Unchecked)
         else:
             for item in selected_items:
                 item.setCheckState(0, Qt.Unchecked)

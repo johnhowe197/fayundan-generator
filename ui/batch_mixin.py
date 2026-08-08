@@ -27,6 +27,20 @@ class BatchMixin:
             QMessageBox.information(self, '提示', '请先在树结构中勾选需要设置的节点（点击复选框）')
             return
 
+        # 校验：批量设置仅支持同一层级且同父物料的节点（兄弟节点）。
+        # 跨层级勾选时，把父节点"是否展开"改为"否"会导致其下整棵子树被
+        # 折叠隐藏（界面表现为"下面没了"），且被隐藏节点的设置结果不可见，
+        # 故选择集不合法时直接阻止，不进入设置对话框。
+        ok, detail = self._validate_batch_nodes_same_sibling(checked_nodes)
+        if not ok:
+            QMessageBox.warning(self, '警告',
+                '批量设置仅支持同一层级且同父物料的节点！\n\n'
+                f'当前勾选跨越以下分组：\n{detail}\n\n'
+                '跨层级设置可能把父节点"是否展开"改为"否"，\n'
+                '导致其下内容被折叠隐藏。\n'
+                '请重新勾选同一层级且同父物料的节点后再试。')
+            return
+
         dialog = QDialog(self)
         dialog.setWindowTitle(f'批量设置 - {len(checked_nodes)} 个节点')
         dialog.setFixedSize(350, 250)
@@ -139,6 +153,37 @@ class BatchMixin:
             self.refresh_tree()
             self.update_status_bar()
             QMessageBox.information(self, '成功', f'已批量设置 {count} 个节点')
+
+    def _validate_batch_nodes_same_sibling(self, checked_nodes):
+        """校验勾选节点是否为同一层级且同父物料（兄弟节点）
+
+        跨层级批量设置可能把父节点"是否展开"改为"否"，导致其下整棵子树
+        被折叠隐藏（界面表现为"下面没了"），且被隐藏的子节点设置结果
+        不可见，极易误操作。因此批量设置仅允许修改同一层级且同父物料的节点。
+
+        Args:
+            checked_nodes: 勾选节点列表
+
+        Returns:
+            (True, '') 校验通过；否则 (False, 分组明细文本)
+        """
+        groups = {}
+        for node in checked_nodes:
+            key = (node.level, node.parent_id)
+            groups.setdefault(key, []).append(node)
+
+        if len(groups) <= 1:
+            return True, ''
+
+        lines = []
+        for (level, parent_id), group in groups.items():
+            parent_name = ''
+            first = group[0]
+            if first.parent is not None and first.parent.name:
+                parent_name = first.parent.name
+            parent_desc = f'{parent_id} {parent_name}'.strip() if parent_name else (parent_id or '（顶层）')
+            lines.append(f'  · 层级 {level} / 父物料 {parent_desc}：{len(group)} 个')
+        return False, '\n'.join(lines)
 
     def get_checked_nodes(self):
         """获取所有勾选的节点（不含隐藏节点）"""

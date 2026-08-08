@@ -66,7 +66,7 @@ class EntityMixin:
         preset_row2.addWidget(btn_delete_preset)
 
         btn_reset_preset = QPushButton('重置预设')
-        btn_reset_preset.clicked.connect(lambda: self._reset_presets())
+        btn_reset_preset.clicked.connect(lambda: self._reset_presets(preset_combo))
         preset_row2.addWidget(btn_reset_preset)
 
         btn_set_current = QPushButton('置为当前')
@@ -126,7 +126,16 @@ class EntityMixin:
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.SelectedClicked)
 
-        entities = entity_mgr.load_definitions()
+        # 表格初始内容应与下拉框（当前预设）一致：优先加载当前预设，
+        # 无当前预设时回退到全局发运主体定义（修复：重开对话框时
+        # 下拉框已是"转载机"但明细仍显示全局默认定义的"不同步"问题）
+        preset = entity_mgr.get_preset(current_preset) if current_preset else None
+        if preset:
+            entities = [(code, name, '')
+                        for code, name
+                        in EntityConfigManager._ensure_locked_codes(preset.get('entities', {})).items()]
+        else:
+            entities = entity_mgr.load_definitions()
 
         def sort_key(item):
             code = item[0]
@@ -293,7 +302,11 @@ class EntityMixin:
         try:
             preset_name, ok = QInputDialog.getText(self, '保存预设',
                 '请输入预设名称:', text=preset_name or '')
-            if not ok or not preset_name:
+            if not ok:          # 用户主动取消：按惯例静默
+                return
+            preset_name = preset_name.strip()
+            if not preset_name:  # 点了确定但名称为空：明确提示，避免"以为保存了"
+                QMessageBox.warning(self, '警告', '预设名称不能为空！')
                 return
 
             entities_dict = {}
@@ -339,11 +352,20 @@ class EntityMixin:
     def _create_new_preset(self, preset_combo):
         """创建新预设"""
         preset_name, ok = QInputDialog.getText(self, '创建新预设', '请输入新预设的名称:')
-        if not ok or not preset_name:
+        if not ok:          # 用户主动取消：按惯例静默
+            return
+        preset_name = preset_name.strip()
+        if not preset_name:  # 点了确定但名称为空：明确提示，避免"以为保存了"
+            QMessageBox.warning(self, '警告', '预设名称不能为空！')
             return
 
         entity_mgr = EntityConfigManager()
         if entity_mgr.create_preset(preset_name):
+            # 恢复 blockSignals 修复中被一并切断的"新建即激活"语义：
+            # 新预设立即成为当前预设，随后"保存"才会把表格内容写入该预设
+            if not entity_mgr.set_current_preset(preset_name):
+                QMessageBox.warning(self, '警告',
+                    f'预设已创建，但设为当前预设失败：{entity_mgr.last_error}')
             # blockSignals 防止刷新下拉时 currentTextChanged 触发
             # _load_preset_to_table 覆盖表格中未保存的编辑
             preset_combo.blockSignals(True)
@@ -351,7 +373,8 @@ class EntityMixin:
             preset_combo.addItems(entity_mgr.get_preset_names())
             preset_combo.setCurrentText(preset_name)
             preset_combo.blockSignals(False)
-            QMessageBox.information(self, '成功', f'已创建新预设 "{preset_name}"')
+            QMessageBox.information(self, '成功',
+                f'已创建新预设 "{preset_name}" 并设为当前预设。\n编辑表格后点击「保存」即可将内容写入该预设。')
         elif entity_mgr.get_preset(preset_name) is not None:
             QMessageBox.warning(self, '警告', f'预设 "{preset_name}" 已存在！')
         else:
@@ -396,7 +419,7 @@ class EntityMixin:
             preset_combo.blockSignals(False)
             QMessageBox.information(self, '成功', f'已删除预设 "{preset_name}"')
 
-    def _reset_presets(self):
+    def _reset_presets(self, preset_combo):
         """重置预设到默认值"""
         reply = QMessageBox.question(
             self, '确认重置',
@@ -410,6 +433,14 @@ class EntityMixin:
 
         entity_mgr = EntityConfigManager()
         if entity_mgr.reset_presets():
+            # blockSignals 防止刷新下拉时 currentTextChanged 触发
+            # _load_preset_to_table 覆盖表格中未保存的编辑（重置后必须让
+            # 下拉与文件一致，否则残留陈旧预设名，切换时会报"预设不存在"）
+            preset_combo.blockSignals(True)
+            preset_combo.clear()
+            preset_combo.addItems(entity_mgr.get_preset_names())
+            preset_combo.setCurrentText(entity_mgr.get_current_preset_name())
+            preset_combo.blockSignals(False)
             QMessageBox.information(self, '成功', '已重置为默认预设配置')
         else:
             QMessageBox.critical(self, '错误', '重置失败！')

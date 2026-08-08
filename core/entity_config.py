@@ -6,6 +6,7 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
@@ -298,8 +299,12 @@ class EntityConfigManager:
             是否保存成功
         """
         try:
-            with open(self._entity_file, 'w', encoding='utf-8') as f:
+            # 先写临时文件再原子替换：写入中断不会留下半截 JSON，
+            # 避免下次读取失败回退空配置、后续保存抹掉全部定义
+            tmp_file = self._entity_file.with_name(self._entity_file.name + '.tmp')
+            with open(tmp_file, 'w', encoding='utf-8') as f:
                 json.dump(entities, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_file, self._entity_file)
             # 更新缓存
             EntityConfigManager._cached_entity_map = {code: name for code, name, desc in entities}
             self.last_error = ''
@@ -355,8 +360,12 @@ class EntityConfigManager:
             是否保存成功
         """
         try:
-            with open(self._preset_file, 'w', encoding='utf-8') as f:
+            # 先写临时文件再原子替换：写入中断不会留下半截 JSON，
+            # 避免 load_presets 读取失败回退空配置、后续保存抹掉全部预设
+            tmp_file = self._preset_file.with_name(self._preset_file.name + '.tmp')
+            with open(tmp_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_file, self._preset_file)
             self.last_error = ''
             return True
         except Exception as e:

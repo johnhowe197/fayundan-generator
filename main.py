@@ -2,7 +2,7 @@
 发运单生成器 - 主程序入口
 
 项目名称：发运单生成器（桌面版）
-版本：2.3.1
+版本：2.5.3
 创建日期：2026-06-06
 描述：离线桌面应用，实现多级BOM数据导入、树结构可视化、发运配置维护、自动计算和发运单导出
 """
@@ -75,7 +75,7 @@ def main():
 
         # 设置应用程序信息
         app.setApplicationName("发运单生成器")
-        app.setApplicationVersion("2.3.1")
+        app.setApplicationVersion("2.5.3")
         app.setOrganizationName("WJH")
 
         # 设置异常钩子

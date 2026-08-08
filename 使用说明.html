@@ -777,7 +777,7 @@
     <div class="sidebar-header">
       <div class="sidebar-logo">Documentation</div>
       <div class="sidebar-title">发运单生成器</div>
-      <div class="sidebar-ver">v2.0 · User Guide</div>
+      <div class="sidebar-ver">v2.5.3 · User Guide</div>
     </div>
     <nav class="sidebar-nav">
       <div class="nav-group-label">概览</div>
@@ -1053,7 +1053,9 @@
       <div class="card">
         <div class="card-title"><span class="icon">📋</span> 批量设置 <kbd>F1</kbd></div>
         <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
-          对已勾选节点一次性设置 是否展开 / 发运主体 / 方式 / 备注。
+          对已勾选节点一次性设置 是否展开 / 发运主体 / 方式 / 备注。<br>
+          ⚠️ 仅支持勾选<strong style="color:var(--yellow)">同一层级且同父物料</strong>的节点（兄弟节点）；
+          跨层级 / 跨父勾选会被拦截提示，防止把父节点设为"否"导致其下内容被折叠隐藏。
         </p>
       </div>
 
@@ -1182,7 +1184,7 @@
       <div class="card">
         <div class="card-title"><span class="icon">↩️</span> 撤销 / 恢复</div>
         <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
-          <kbd>↩️</kbd> / <kbd>↪️</kbd> 按钮或 <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd>，最多保留 <strong style="color:var(--cyan)">5 步</strong>。<br>
+          <kbd>↩️</kbd> / <kbd>↪️</kbd> 按钮或 <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd>，最多保留 <strong style="color:var(--cyan)">30 步</strong>。<br>
           设置发运配置、批量操作、添加/拆分/删除物料、格式刷等都可撤销。
         </p>
       </div>

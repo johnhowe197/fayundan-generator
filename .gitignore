@@ -1,52 +1,71 @@
 ```
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Compiled and build artifacts
-*.o
-*.obj
-*.out
-*.so
-*.dll
-*.exe
-
-# Dependencies
-.venv/
-venv/
-.env
-.env.local
-.env.*
-
 # Logs and temp files
 *.log
 *.tmp
 *.swp
 
+# Environment
+.env
+.env.local
+.env.*
+
 # Editors
 .vscode/
 .idea/
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+dist/
+build/
+target/
+.gradle/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Compiled files
+*.pyc
+*.class
+*.o
+*.exe
+*.dll
+*.so
+*.a
+*.obj
+*.out
 
 # Coverage reports
 coverage/
 htmlcov/
 .coverage
 
-# Distribution / packaging
-dist/
-build/
-*.egg-info/
-
-# 本地业务/运行时数据（ERP 原始数据、导出、进度文件，敏感数据不上传 GitHub）
-_data/
-output/
-progress/
-# 本地不入库：智能体配置（工具依赖根目录定位，仅排除不移动）
-.agents/
-.claude/
-CLAUDE.md
-
-# 本地整理文件夹（归档/打包配置/开发编排文档）
-_local/
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+```

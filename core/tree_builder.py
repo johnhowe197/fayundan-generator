@@ -204,6 +204,9 @@ class TreeBuilder:
             if child_node and parent_node and child_node is not parent_node:
                 parent_node.add_child(child_node)
 
+        # ---- 循环引用检测：父链成环时后续递归遍历会无限循环 ----
+        self._raise_on_parent_cycles()
+
         # ---- 第三遍：按序号排序子节点 ----
         for node in self.all_nodes:
             if node.children:
@@ -226,16 +229,40 @@ class TreeBuilder:
 
         return self.root
 
-    def _recompute_subtree(self, node: BOMNode):
+    def _raise_on_parent_cycles(self):
+        """检测父链是否成环（正常建树不会成环，此处防御异常挂载）
+
+        Raises:
+            ValueError: 存在循环引用，描述涉及的物料号
+        """
+        for node in self.all_nodes:
+            seen = set()
+            current = node
+            while current is not None:
+                if id(current) in seen:
+                    raise ValueError(
+                        f'BOM 数据存在循环引用（物料互为父子）：{node.material_id}。'
+                        '请检查父物料号与子物料号后重新导入。')
+                seen.add(id(current))
+                current = current.parent
+
+    def _recompute_subtree(self, node: BOMNode, visited: Optional[set] = None):
         """
         自顶向下重算子树最终数量
 
         先算父节点（子节点最终数量 = 自身用量 × 父节点最终数量），
         再递归子节点，确保子节点用到的是父节点已更新的最终数量。
+
+        visited 用于防御异常数据形成的环，避免递归无限循环。
         """
+        if visited is None:
+            visited = set()
+        if id(node) in visited:
+            return
+        visited.add(id(node))
         node.calculate_final_quantity()
         for child in node.children:
-            self._recompute_subtree(child)
+            self._recompute_subtree(child, visited)
 
     def validate_structure(self) -> List[str]:
         """校验树结构完整性（A2-1：只检测，不改变挂载算法）
@@ -271,7 +298,10 @@ class TreeBuilder:
         roots = [n for n in self.all_nodes if n.level == 0 or not n.parent_id]
         if len(roots) > 1:
             codes = '、'.join(n.material_id for n in roots[:10])
-            issues.append(f'存在 {len(roots)} 个顶级节点（level=0/父物料号为空）：{codes}')
+            issues.append(
+                f'存在 {len(roots)} 个顶级节点（level=0/父物料号为空）：{codes}。'
+                f'当前仅处理第一个顶级节点 {roots[0].material_id}，其余子树不会进入发运单；'
+                '一个文件只能包含一个顶层产品，请拆分后再导入。')
 
         if orphans:
             # 按父物料号分组，便于用户定位

@@ -815,10 +815,12 @@ w5._dirty = False
 stack_before5 = len(w5._undo_stack)
 question_queue[:] = [QMessageBox.No]
 dialog_log.clear()
+w5.current_shipping_order = 'SENTINEL'  # 模拟已有预览结果
 item_a5.setText(6, '否')  # 触发 on_item_changed -> 确认框
 check('取消时弹出确认框', any(t == 'question' for t, _, _ in dialog_log))
 check('取消后展开状态不变', nodes5['a'].expand_status == '是')
 check('取消后树文本回滚', item_a5.text(6) == '是')
+check('取消后预览数据未被提前清空', w5.current_shipping_order == 'SENTINEL')
 check('取消后不残留撤销点', len(w5._undo_stack) == stack_before5,
       f"after={len(w5._undo_stack)}")
 check('取消后不误置 dirty', w5._dirty is False)
@@ -907,6 +909,39 @@ ev = _FakeCloseEvent()
 w6.closeEvent(ev)
 check('保存成功后关闭', ev.accepted is True)
 exec_behavior['fn'] = prev_exec_fn
+
+
+# ==================== 循环引用防护 ====================
+print()
+print("== 循环引用防护 ==")
+cy_a = BOMNode(material_id='CY-A', parent_id='CY-B', level=1)
+cy_b = BOMNode(material_id='CY-B', parent_id='CY-A', level=1)
+cy_a.add_child(cy_b)
+cy_b.add_child(cy_a)  # 人为构造互为父子
+tb_cycle = w6.tree_builder.__class__()
+tb_cycle.all_nodes = [cy_a, cy_b]
+try:
+    tb_cycle._raise_on_parent_cycles()
+    check('循环引用被检测', False, '未抛出异常')
+except ValueError as e:
+    check('循环引用被检测', '循环引用' in str(e), str(e))
+tb_cycle._recompute_subtree(cy_a)  # 带 visited 防护，不应无限递归
+check('循环子树重算可终止', True)
+
+
+# ==================== 多根文件提示 ====================
+print()
+print("== 多根文件提示 ==")
+tb_multi = w6.tree_builder.__class__()
+df_multi = pd.DataFrame([
+    {'子物料号': 'MR1', '父物料号': '', '数量': 1, '子物料净重': 0, 'level': 0},
+    {'子物料号': 'MR2', '父物料号': '', '数量': 1, '子物料净重': 0, 'level': 0},
+])
+tb_multi.build_from_dataframe(df_multi)
+issues_multi = tb_multi.validate_structure()
+check('多根被检测并说明只处理第一个',
+      any('仅处理第一个顶级节点' in s and '一个文件只能包含一个顶层产品' in s
+          for s in issues_multi), f'{issues_multi}')
 
 
 print()

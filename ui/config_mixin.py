@@ -30,18 +30,8 @@ class ConfigMixin:
         # 重复 _save_state 泛洪撤销栈。处理期间忽略重入事件。
         if getattr(self, '_in_item_changed', False):
             return
-        # 记录变更前的撤销栈与 dirty：列编辑在确认框被拒绝时需完整回滚，
-        # 不能留下无效果的撤销点或误置 dirty（P2-1）
-        undo_before = list(self._undo_stack)
-        redo_before = list(self._redo_stack)
-        was_dirty = self._dirty
         self._in_item_changed = True
         try:
-            # 标记为未保存
-            if not self._dirty:
-                self._dirty = True
-                self._update_title()
-
             node = item.data(1, Qt.UserRole)
             if not node:
                 return
@@ -50,9 +40,11 @@ class ConfigMixin:
             if self._is_node_hidden(node):
                 return
 
-            # 保存状态用于撤销
+            # 先捕获快照，确认生效后再提交：取消时不会留下无效果的撤销点，
+            # 也不会提前清空预览结果（P2-R1）
+            snapshot = None
             if column in [6, 7, 8, 9]:
-                self._save_state()
+                snapshot = self._save_state_snapshot()
 
             accepted = True
             if column == 6:  # 是否展开
@@ -64,13 +56,15 @@ class ConfigMixin:
             elif column == 9:  # 备注
                 node.remark = item.text(9)
 
-            if accepted is False:
-                # 用户在确认框取消：回滚本次 _save_state 的副作用
-                self._undo_stack[:] = undo_before
-                self._redo_stack[:] = redo_before
-                self._dirty = was_dirty
-                self._update_title()
-                self._update_undo_redo_buttons()
+            if accepted is not False:
+                if snapshot is not None:
+                    # 提交快照：置脏并失效预览（均在 _push_undo_snapshot 内统一处理）
+                    self._push_undo_snapshot(snapshot)
+                else:
+                    # 非撤销类列编辑（如名称/图号）：仍需标记未保存并失效预览
+                    self._dirty = True
+                    self._update_title()
+                    self._invalidate_preview_after_change()
 
             # 统一更新背景色和状态显示
             self._update_item_style(item, node)

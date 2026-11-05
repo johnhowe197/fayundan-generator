@@ -944,6 +944,59 @@ check('多根被检测并说明只处理第一个',
           for s in issues_multi), f'{issues_multi}')
 
 
+# ==================== 进度文件原子保存 ====================
+print()
+print("== 进度文件原子保存 ==")
+_rt_dir = Path(tempfile.mkdtemp(prefix='prog_atomic_'))
+_rt_target = _rt_dir / 'progress.xlsx'
+_rt_nodes = [BOMNode(material_id='P1', parent_id='', level=0,
+                     expand_status='否', shipping_entity='01', shipping_method='A')]
+_rt_mgr = ProgressFileManager(_rt_dir)
+_rt_mgr.save(str(_rt_target), _rt_nodes, {'项目名称': '原始'})
+_rt_before = _rt_target.read_bytes()
+
+import core.progress_config as _pc_module
+
+
+class _BoomWriter:
+    def __init__(self, *args, **kwargs):
+        raise IOError('模拟写入失败')
+
+
+_orig_writer = _pc_module.pd.ExcelWriter
+_pc_module.pd.ExcelWriter = _BoomWriter
+_rt_raised = False
+try:
+    try:
+        _rt_mgr.save(str(_rt_target), _rt_nodes, {'项目名称': '新'})
+    except Exception:
+        _rt_raised = True
+finally:
+    _pc_module.pd.ExcelWriter = _orig_writer
+check('写入失败会抛出异常', _rt_raised)
+check('写入失败后原进度文件保持不变', _rt_target.read_bytes() == _rt_before)
+check('写入失败不残留 .tmp', not list(_rt_dir.glob('*.tmp*')))
+
+
+# ==================== 加载进度后自动重算 ====================
+print()
+print("== 加载进度后自动重算并恢复预览 ==")
+_w_src, _ = make_window()
+_prog_dir = Path(tempfile.mkdtemp(prefix='prog_load_'))
+_prog_file = _prog_dir / 'loaded.xlsx'
+ProgressFileManager(_prog_dir).save(
+    str(_prog_file), _w_src.tree_builder.all_nodes,
+    {'项目名称': '加载测试'}, hidden_checker=lambda n: False)
+_w_dst = MainWindow()
+file_behavior['open'] = (str(_prog_file), '')
+_w_dst.load_progress()
+check('加载后已自动计算',
+      _w_dst.current_shipping_order is not None
+      and not _w_dst.current_shipping_order.empty,
+      f'{type(_w_dst.current_shipping_order)}')
+check('加载后预览面板已显示', _w_dst.preview_group.isHidden() is False)
+
+
 print()
 print(f"总计: {passed + failed} 项, 通过 {passed}, 失败 {failed}")
 sys.exit(1 if failed else 0)

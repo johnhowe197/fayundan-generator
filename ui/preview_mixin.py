@@ -29,8 +29,12 @@ class PreviewMixin:
         if message:
             self.statusBar().showMessage('配置已变更，请重新计算')
 
-    def calculate(self):
-        """执行计算"""
+    def calculate(self, silent: bool = False):
+        """执行计算
+
+        Args:
+            silent: 静默模式。为 True 时不弹"计算完成"提示（供加载进度后自动重算）
+        """
         if not self.tree_builder.root:
             QMessageBox.warning(self, '警告', '请先导入BOM数据！')
             return
@@ -69,11 +73,12 @@ class PreviewMixin:
 
                 self.update_status_bar()
                 self.statusBar().showMessage('计算完成！')
-            QMessageBox.information(self, '成功',
-                f'计算完成！\n\n'
-                f'共 {len(self.current_shipping_order)} 条发运记录\n'
-                f'可见节点: {visible_count} 个\n'
-                f'已隐藏节点: {hidden_count} 个（不参与计算）')
+            if not silent:
+                QMessageBox.information(self, '成功',
+                    f'计算完成！\n\n'
+                    f'共 {len(self.current_shipping_order)} 条发运记录\n'
+                    f'可见节点: {visible_count} 个\n'
+                    f'已隐藏节点: {hidden_count} 个（不参与计算）')
         except Exception as e:
             # 计算失败：清空结果与预览表格/统计，避免导出失败前的旧数据
             self.current_shipping_order = None

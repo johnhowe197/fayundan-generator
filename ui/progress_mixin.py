@@ -213,6 +213,16 @@ class ProgressMixin:
 
                 self.refresh_tree()
                 self._restore_expand_state()
+
+                # 加载后静默重算并恢复右侧预览，使界面与保存前一致；
+                # 结构异常时不自动计算，避免在用户确认前产出可能漏项的结果
+                if not issues:
+                    self.calculate(silent=True)
+                    if (self.current_shipping_order is not None
+                            and not self.current_shipping_order.empty):
+                        self.refresh_table()
+                        self.preview_group.setVisible(True)
+
                 self.update_status_bar()
 
                 self._last_progress_path = Path(file_path)

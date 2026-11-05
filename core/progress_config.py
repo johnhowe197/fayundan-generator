@@ -4,6 +4,7 @@
 管理工作进度的保存和加载（Excel格式）
 """
 
+import os
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -78,10 +79,19 @@ class ProgressFileManager:
 
         df = pd.DataFrame(data)
 
-        # 保存到 Excel（两个工作表）
-        with pd.ExcelWriter(str(file_path), engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='BOM数据', index=False)
-            pd.DataFrame([project_info]).to_excel(writer, sheet_name='项目信息', index=False)
+        # 先写临时文件再原子替换：写入中断/磁盘满时不会破坏已有的进度文件
+        tmp_path = file_path.with_name(f'{file_path.stem}.tmp{file_path.suffix}')
+        try:
+            with pd.ExcelWriter(str(tmp_path), engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='BOM数据', index=False)
+                pd.DataFrame([project_info]).to_excel(writer, sheet_name='项目信息', index=False)
+            os.replace(tmp_path, file_path)
+        except Exception:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
         return len(data), visible_count, hidden_count
 

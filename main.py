@@ -2,7 +2,7 @@
 发运单生成器 - 主程序入口
 
 项目名称：发运单生成器（桌面版）
-版本：2.5.3
+版本：2.5.4
 创建日期：2026-06-06
 描述：离线桌面应用，实现多级BOM数据导入、树结构可视化、发运配置维护、自动计算和发运单导出
 """
@@ -13,12 +13,22 @@ import traceback
 import logging
 from pathlib import Path
 
-# 设置控制台编码
-import io
+# 统一控制台编码，避免中文乱码
 _stdout_wrap_error = None
 try:
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            # 控制台代码页切到 65001(UTF-8)，与下方 UTF-8 输出保持一致，
+            # 否则 GBK(936) 控制台会把 UTF-8 字节显示为乱码
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+            ctypes.windll.kernel32.SetConsoleCP(65001)
+        except Exception:
+            pass  # 无控制台（打包为 --windowed）时忽略
+    for _stream in (sys.stdout, sys.stderr):
+        if _stream is not None:
+            # 管道/IDE 终端默认使用 GBK(cp936)，统一改为 UTF-8
+            _stream.reconfigure(encoding='utf-8', errors='replace')
 except Exception as e:
     _stdout_wrap_error = e
 
@@ -75,7 +85,7 @@ def main():
 
         # 设置应用程序信息
         app.setApplicationName("发运单生成器")
-        app.setApplicationVersion("2.5.3")
+        app.setApplicationVersion("2.5.4")
         app.setOrganizationName("WJH")
 
         # 设置异常钩子

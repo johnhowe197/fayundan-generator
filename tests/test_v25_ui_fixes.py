@@ -156,9 +156,9 @@ check('上下文为 Qt.WidgetShortcut',
 check('parent 为 tree_widget', w1._delete_shortcut.parent() == w1.tree_widget)
 
 
-# ============ 2. 勾选撤销（核心组） ============
+# ============ 2. 勾选为纯 UI 状态（B6） ============
 print()
-print("== 2. 勾选操作可撤销、标脏，快照携带 checked_uids ==")
+print("== 2. 勾选操作不压撤销栈/不标脏，快照仍携带 checked_uids ==")
 # 2a. 快照 checked_uids 与手工 setCheckState 一致
 w2, n2 = make_window()
 find_item(w2, n2['a1'].uid).setCheckState(0, Qt.Checked)
@@ -167,46 +167,43 @@ check('快照 checked_uids 与手工勾选一致', snap['checked_uids'] == {n2['
       f"{snap['checked_uids']}")
 find_item(w2, n2['a1'].uid).setCheckState(0, Qt.Unchecked)
 
-# 2b. 普通点击：栈+1、标脏、勾选生效
+# 2b. 普通点击：不压栈、不标脏、勾选生效（B6：勾选是纯 UI 状态）
 w2._dirty = False
 stack_before = len(w2._undo_stack)
 click_ok = click_checkbox(w2, n2['a1'].uid)
 check('eventFilter 拦截复选框点击', click_ok is True)
-check('勾选点击压入撤销栈', len(w2._undo_stack) == stack_before + 1,
+check('勾选点击不压入撤销栈', len(w2._undo_stack) == stack_before,
       f"before={stack_before}, after={len(w2._undo_stack)}")
-check('勾选点击标记未保存', w2._dirty is True)
+check('勾选点击不标记未保存', w2._dirty is False)
 check('点击后 A1 被勾选', state_of(w2, n2['a1'].uid) == Qt.Checked)
 
-# 2c. undo 还原勾选（A1 勾选时祖先 A/ROOT 未被勾选，撤销后全部未勾选）
+# 2c. 勾选状态随真实配置快照保存，并由撤销/恢复还原
+w2._save_state()  # 模拟一次实际配置变更（当前 A1 已勾选）
+check('配置快照携带当前勾选',
+      w2._undo_stack[-1]['checked_uids'] == {n2['a1'].uid},
+      f"{w2._undo_stack[-1]['checked_uids']}")
+find_item(w2, n2['a1'].uid).setCheckState(0, Qt.Unchecked)
 w2.undo()
-check('undo 后 A1 还原为未勾选', state_of(w2, n2['a1'].uid) == Qt.Unchecked)
-check('undo 后无任何勾选', w2._collect_checked_uids() == set(),
-      f"{w2._collect_checked_uids()}")
-
-# 2d. 先勾选祖先再勾选子节点 → undo 还原祖先勾选（祖先联动）
-click_checkbox(w2, n2['a'].uid)
-check('前置：A 被勾选', state_of(w2, n2['a'].uid) == Qt.Checked)
-click_checkbox(w2, n2['a1'].uid)
-check('勾选 A1 后祖先 A 自动取消', state_of(w2, n2['a'].uid) == Qt.Unchecked
-      and state_of(w2, n2['a1'].uid) == Qt.Checked)
-w2.undo()
-check('undo 还原祖先联动（A 勾选、A1 未勾选）',
-      state_of(w2, n2['a'].uid) == Qt.Checked and state_of(w2, n2['a1'].uid) == Qt.Unchecked,
-      f"A={state_of(w2, n2['a'].uid)}, A1={state_of(w2, n2['a1'].uid)}")
-
-# 2e. redo 重现
+check('undo 恢复快照中的勾选', state_of(w2, n2['a1'].uid) == Qt.Checked)
 w2.redo()
-check('redo 重现（A 未勾选、A1 勾选）',
-      state_of(w2, n2['a'].uid) == Qt.Unchecked and state_of(w2, n2['a1'].uid) == Qt.Checked)
+check('redo 恢复撤销前的未勾选', state_of(w2, n2['a1'].uid) == Qt.Unchecked)
+
+# 2d. 先勾选祖先再勾选子节点 → 祖先自动取消（纯 UI 联动，无撤销点）
+w2c, n2c = make_window()
+click_checkbox(w2c, n2c['a'].uid)
+check('前置：A 被勾选', state_of(w2c, n2c['a'].uid) == Qt.Checked)
+click_checkbox(w2c, n2c['a1'].uid)
+check('勾选 A1 后祖先 A 自动取消', state_of(w2c, n2c['a'].uid) == Qt.Unchecked
+      and state_of(w2c, n2c['a1'].uid) == Qt.Checked)
 
 # 2f. Ctrl 路径
 w3, n3 = make_window()
 stack_before = len(w3._undo_stack)
 check('Ctrl 点击被拦截', click_checkbox(w3, n3['a1'].uid, Qt.ControlModifier) is True)
-check('Ctrl 路径压栈+1', len(w3._undo_stack) == stack_before + 1)
+check('Ctrl 路径不压栈', len(w3._undo_stack) == stack_before,
+      f"before={stack_before}, after={len(w3._undo_stack)}")
 check('Ctrl 路径 A1 勾选', state_of(w3, n3['a1'].uid) == Qt.Checked)
-w3.undo()
-check('Ctrl 路径 undo 还原', state_of(w3, n3['a1'].uid) == Qt.Unchecked)
+check('Ctrl 路径不标脏', w3._dirty is False)
 
 # 2g. Shift 区间路径（区间 [A1..B] 为无父子冲突的兄弟项，
 #      勾选子项会按规则自动取消祖先勾选，故 A 保持未勾选）
@@ -217,12 +214,10 @@ check('Shift 点击被拦截', click_checkbox(w4, n4['b'].uid, Qt.ShiftModifier)
 check('Shift 区间 A1 与 B 均勾选',
       state_of(w4, n4['a1'].uid) == Qt.Checked and state_of(w4, n4['b'].uid) == Qt.Checked)
 check('Shift 区间祖先 A 按规则自动取消勾选', state_of(w4, n4['a'].uid) == Qt.Unchecked)
-check('Shift 路径压栈+1', len(w4._undo_stack) == stack_before + 1)
-w4.undo()
-check('Shift 路径 undo 全部还原',
-      state_of(w4, n4['a1'].uid) == Qt.Unchecked and state_of(w4, n4['b'].uid) == Qt.Unchecked)
+check('Shift 路径不压栈', len(w4._undo_stack) == stack_before,
+      f"before={stack_before}, after={len(w4._undo_stack)}")
 
-# 2h. F2/F3：无目标不产生空快照；有目标压栈可撤销
+# 2h. F2/F3：无目标不产生空快照；有目标同样不压栈（B6）
 w5, n5 = make_window()
 stack_before = len(w5._undo_stack)
 w5.tree_widget.clearSelection()
@@ -235,13 +230,15 @@ sel_item = find_item(w5, n5['a1'].uid)
 sel_item.setSelected(True)
 w5.tree_widget.setCurrentItem(sel_item)
 w5.check_selected_items()
-check('F2 有目标项压栈+1', len(w5._undo_stack) == stack_before + 1)
+check('F2 有目标项不压栈', len(w5._undo_stack) == stack_before,
+      f"after={len(w5._undo_stack)}")
 check('F2 后 A1 被勾选', state_of(w5, n5['a1'].uid) == Qt.Checked)
-w5.undo()
-check('F2 可撤销', state_of(w5, n5['a1'].uid) == Qt.Unchecked)
+check('F2 不标脏', w5._dirty is False)
 w5.tree_widget.setCurrentItem(find_item(w5, n5['a1'].uid))
 w5.uncheck_selected_items()
-check('F3 有目标项压栈+1', len(w5._undo_stack) == stack_before + 1)
+check('F3 有目标项不压栈', len(w5._undo_stack) == stack_before,
+      f"after={len(w5._undo_stack)}")
+check('F3 后 A1 未勾选', state_of(w5, n5['a1'].uid) == Qt.Unchecked)
 
 # 2i. 旧格式快照（无 checked_uids）恢复兼容
 w6, n6 = make_window()

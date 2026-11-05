@@ -10,6 +10,50 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 
+def parse_level(value) -> int:
+    """将层号/层级值解析为整数（模块级函数，供 BOMParser 与 TreeBuilder 复用）
+
+    兼容以下格式：
+    - 数值或数值字符串：0.0→0、1.0→1、2.0→2
+    - 点号格式：'.2'→2、'..3'→3、'...4'→4
+    - 空值（None/NaN/空串）→ 0
+
+    无法识别时抛出 ValueError（带原始值），不再把错误的层级静默当成 0/2。
+    """
+    if value is None:
+        return 0
+
+    if isinstance(value, bool):
+        return int(value)
+
+    if isinstance(value, (int, float)):
+        try:
+            if pd.isna(value):
+                return 0
+        except (TypeError, ValueError):
+            pass
+        if float(value).is_integer():
+            return int(value)
+        raise ValueError(f"无法识别的层号：{value!r}")
+
+    s = str(value).strip()
+    if s == '' or s.lower() in ('nan', 'none', 'null'):
+        return 0
+
+    # 点号格式：'.2'、'..3'（沿用“点号数 + 1”的历史语义）
+    if re.fullmatch(r'\.+\d+', s):
+        return s.count('.') + 1
+
+    # 数值字符串：'0'、'1.0'、'2'
+    try:
+        num = float(s)
+    except ValueError:
+        raise ValueError(f"无法识别的层号：{value!r}") from None
+    if num.is_integer():
+        return int(num)
+    raise ValueError(f"无法识别的层号：{value!r}")
+
+
 class BOMParser:
     """BOM数据解析器"""
 
@@ -325,21 +369,9 @@ class BOMParser:
         Returns:
             层数字
         """
-        if pd.isna(layer_str):
-            return 0
+        return parse_level(layer_str)
 
-        layer_str = str(layer_str).strip()
-
-        if layer_str == '0':
-            return 0
-        elif layer_str == '1':
-            return 1
-        else:
-            # 计算点号数量
-            dots = layer_str.count('.')
-            return dots + 1
-
-    def _read_csv_any_encoding(self, file_path: Path) -> pd.DataFrame:
+    def _read_csv_any_encoding(self, file_path: Path, dtype=None) -> pd.DataFrame:
         """
         依次尝试常见编码读取CSV
 
@@ -348,6 +380,7 @@ class BOMParser:
 
         Args:
             file_path: CSV文件路径
+            dtype: 可选，传给 pandas 的列类型映射（ID 列需指定 str，避免长数字被推断为浮点）
 
         Returns:
             读取的DataFrame
@@ -355,7 +388,7 @@ class BOMParser:
         last_err = None
         for enc in ('utf-8-sig', 'gbk', 'gb18030'):
             try:
-                return pd.read_csv(file_path, encoding=enc)
+                return pd.read_csv(file_path, encoding=enc, dtype=dtype)
             except UnicodeDecodeError as e:
                 last_err = e
                 continue
@@ -382,10 +415,13 @@ class BOMParser:
         self.project_id = project_id
 
         # 读取文件
+        # ID 列强制按字符串读取：物料号可能是 19 位长数字，pandas 默认推断为
+        # 数值类型会丢失精度，导致父子物料号不再相等（A7）
+        id_dtype = {'子物料号': str, '父物料号': str}
         if file_path.suffix.lower() == '.csv':
-            df = self._read_csv_any_encoding(file_path)
+            df = self._read_csv_any_encoding(file_path, dtype=id_dtype)
         elif file_path.suffix.lower() in ['.xlsx', '.xls']:
-            df = pd.read_excel(file_path)
+            df = pd.read_excel(file_path, dtype=id_dtype)
         else:
             raise ValueError(f"不支持的文件格式: {file_path.suffix}")
 
@@ -395,6 +431,56 @@ class BOMParser:
         self.cleaned_data = self._clean_data(df)
 
         return self.cleaned_data
+
+    def _to_numeric_checked(self, series: pd.Series, column: str,
+                            empty_as_zero: bool = False) -> pd.Series:
+        """把数值列转为数值；非空但无法解析的值抛出 ValueError（含行号与原始值）
+
+        Args:
+            series: 原始列
+            column: 列名（用于错误提示）
+            empty_as_zero: 空值是否按 0 处理。False 时空值保留 NaN，
+                交由计算引擎的既有空数量守卫报错（fail-loud）。
+
+        Returns:
+            转换后的数值列
+        """
+        def is_empty(v) -> bool:
+            if v is None:
+                return True
+            if isinstance(v, float) and pd.isna(v):
+                return True
+            try:
+                if pd.isna(v):
+                    return True
+            except (TypeError, ValueError):
+                pass
+            return str(v).strip() == ''
+
+        raw = list(series)
+        numeric = pd.to_numeric(series, errors='coerce')
+        numeric_values = list(numeric)
+
+        bad = []
+        for pos, (value, empty) in enumerate(zip(raw, [is_empty(v) for v in raw])):
+            if empty:
+                continue
+            if pd.isna(numeric_values[pos]):
+                # 表头占第 1 行，数据首行为第 2 行
+                bad.append((pos + 2, value))
+
+        if bad:
+            details = '、'.join(f'第{row}行={value!r}' for row, value in bad[:10])
+            more = '' if len(bad) <= 10 else f' 等共 {len(bad)} 行'
+            raise ValueError(
+                f'字段"{column}"存在无法解析的数值：{details}{more}。'
+                '数量/净重必须是数字，请检查ERP导出数据。'
+            )
+
+        result = numeric.copy()
+        if empty_as_zero:
+            result = result.fillna(0.0)
+        return result
 
     def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -416,10 +502,12 @@ class BOMParser:
 
         # 1. 清洗层号字段
         if '层号' in df.columns:
-            df['level'] = df['层号'].apply(self.parse_layer)
+            df['level'] = df['层号'].apply(parse_level)
+        elif 'level' in df.columns:
+            # 兼容已有 level 列（如进度文件），同样走统一解析，避免 0.0/'.2' 误判
+            df['level'] = df['level'].apply(parse_level)
         else:
-            # 如果没有层号字段，尝试使用level字段
-            df['level'] = pd.to_numeric(df.get('level', 0), errors='coerce').fillna(0).astype(int)
+            df['level'] = 0
 
         # 2. 删除无效字段（支持列名有空格的情况）
         fields_to_remove = []
@@ -449,8 +537,11 @@ class BOMParser:
         df_cleaned['是否展开'] = '否'
 
         # 6. 数据类型转换
-        df_cleaned['数量'] = pd.to_numeric(df_cleaned['数量'], errors='coerce').fillna(0)
-        df_cleaned['子物料净重'] = pd.to_numeric(df_cleaned['子物料净重'], errors='coerce').fillna(0)
+        # 数量：非法值阻断导入；空值保留 NaN，交给计算引擎的空数量守卫报错。
+        # 净重：空值按 0（大量ERP数据净重为空），非空非法值同样阻断导入。
+        df_cleaned['数量'] = self._to_numeric_checked(df_cleaned['数量'], '数量')
+        df_cleaned['子物料净重'] = self._to_numeric_checked(
+            df_cleaned['子物料净重'], '子物料净重', empty_as_zero=True)
         df_cleaned['level'] = pd.to_numeric(df_cleaned['level'], errors='coerce').fillna(0).astype(int)
 
         # 7. 修正顶级节点的数量为1

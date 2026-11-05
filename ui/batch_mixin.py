@@ -106,21 +106,63 @@ class BatchMixin:
             method = method_text[0] if method_text and '-' in method_text else method_text
             remark = edit_remark.text().strip()
 
-            # 先捕获快照（不压栈），仅在确有节点被修改后才推入撤销栈并标脏，
-            # 避免勾选节点全为展开节点（全被跳过、无实际变更）时产生无意义撤销点
+            # 先捕获快照（不压栈），仅在确有节点被实际修改后才推入撤销栈并标脏，
+            # 避免全为空值/全部被跳过时产生无意义撤销点（B6）
             snapshot = self._save_state_snapshot()
-            count = 0
-            skipped = 0
+            changed = 0
+            skipped = 0              # 展开节点不允许设置发运配置
+            skipped_leaf = 0         # 叶子节点不能设为"是"（B3）
+            skipped_maintained = 0   # 设为"否"但子孙已维护配置（B9-2）
             # 导入自动规则模块
             from core.entity_config import EntityConfigManager
-            
+
+            # 批量"置否"：若子孙已维护配置，先汇总询问一次；
+            # 确认则清除子孙配置后正常置"否"，拒绝则跳过这些节点并计数（B9-2）
+            maintained_nodes = []
+            clear_maintained = False
+            if expand == '否':
+                maintained_nodes = [
+                    n for n in checked_nodes
+                    if n.children and self._has_children_with_config(n)
+                ]
+                if maintained_nodes:
+                    reply = QMessageBox.question(
+                        self, '确认设置',
+                        f'勾选的节点中有 {len(maintained_nodes)} 个的子物料已维护发运配置！\n\n'
+                        '设为"否"后将清除这些子物料的发运配置，\n'
+                        '它们将不再作为独立发运单元参与统计。\n\n'
+                        '是否继续？',
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No
+                    )
+                    clear_maintained = (reply == QMessageBox.Yes)
+
             for node in checked_nodes:
+                node_changed = False
+
+                # 叶子节点没有子级可展开：保持原值并跳过（B3）
+                if expand == '是' and not node.children:
+                    skipped_leaf += 1
+                    continue
+
+                # 批量设为"否"且子孙有配置：未确认则跳过，确认后清除并继续
+                if expand == '否' and any(n is node for n in maintained_nodes):
+                    if not clear_maintained:
+                        skipped_maintained += 1
+                        continue
+                    self._clear_children_config(node)
+                    node_changed = True
+
                 # 设置展开状态
                 if expand:
+                    if node.expand_status != expand:
+                        node_changed = True
                     node.expand_status = expand
                 # 设为"是"= 不维护：与单节点路径（_handle_expand_change）一致，
                 # 清空发运主体/方式/备注，避免界面残留旧配置
                 if expand == '是':
+                    if node.shipping_entity or node.shipping_method or node.remark:
+                        node_changed = True
                     node.shipping_entity = ''
                     node.shipping_method = ''
                     node.remark = ''
@@ -129,30 +171,53 @@ class BatchMixin:
                     if node.expand_status == '是':
                         skipped += 1
                         continue
-                    if entity:
+                    if entity and node.shipping_entity != entity:
+                        node_changed = True
                         node.shipping_entity = entity
-                    if method:
+                    if method and node.shipping_method != method:
+                        node_changed = True
                         node.shipping_method = method
                     # 主体和方式可同时生效；仅 98→B打捆、99→C装箱 时自动规则覆盖手动方式
                     if entity:
+                        old_method = node.shipping_method
                         EntityConfigManager.apply_auto_rules(node)
+                        if node.shipping_method != old_method:
+                            node_changed = True
                 # 备注：展开节点不维护备注，不写入
                 if remark and node.expand_status != '是':
-                    node.remark = remark
-                node.calculate_final_quantity()
-                count += 1
+                    if node.remark != remark:
+                        node_changed = True
+                        node.remark = remark
 
-            if skipped > 0:
-                QMessageBox.information(self, '提示',
-                    f'已设置 {count} 个节点，跳过 {skipped} 个展开节点（展开节点不允许设置发运配置）')
+                if node_changed:
+                    node.calculate_final_quantity()
+                    changed += 1
 
-            if count > 0:
+            if changed > 0:
                 self._push_undo_snapshot(snapshot)
                 self._dirty = True
                 self._update_title()
             self.refresh_tree()
             self.update_status_bar()
-            QMessageBox.information(self, '成功', f'已批量设置 {count} 个节点')
+
+            skip_details = []
+            if skipped:
+                skip_details.append(f'展开节点 {skipped} 个（不允许设置发运配置）')
+            if skipped_leaf:
+                skip_details.append(f'叶子节点 {skipped_leaf} 个（无子级可展开）')
+            if skipped_maintained:
+                skip_details.append(f'子孙已维护配置 {skipped_maintained} 个（未清除）')
+
+            if changed == 0:
+                msg = '未做任何修改'
+                if skip_details:
+                    msg += '\n\n跳过：\n' + '\n'.join(skip_details)
+                QMessageBox.information(self, '提示', msg)
+            else:
+                msg = f'已批量设置 {changed} 个节点'
+                if skip_details:
+                    msg += '\n\n另跳过：\n' + '\n'.join(skip_details)
+                QMessageBox.information(self, '成功', msg)
 
     def _validate_batch_nodes_same_sibling(self, checked_nodes):
         """校验勾选节点是否为同一层级且同父物料（兄弟节点）
@@ -241,8 +306,7 @@ class BatchMixin:
         # 无目标项直接返回，避免产生空快照
         if not selected_items and not current_item:
             return
-        # 勾选变更前保存撤销快照并标记未保存（与 eventFilter 勾选路径一致）
-        self._save_state()
+        # 勾选是纯 UI 状态：不压撤销栈、不置 dirty（B6）
         if not selected_items:
             current_item.setCheckState(0, Qt.Checked)
             self._uncheck_ancestors(current_item)
@@ -259,8 +323,7 @@ class BatchMixin:
         # 无目标项直接返回，避免产生空快照
         if not selected_items and not current_item:
             return
-        # 勾选变更前保存撤销快照并标记未保存（与 eventFilter 勾选路径一致）
-        self._save_state()
+        # 勾选是纯 UI 状态：不压撤销栈、不置 dirty（B6）
         if not selected_items:
             current_item.setCheckState(0, Qt.Unchecked)
         else:
@@ -302,11 +365,16 @@ class BatchMixin:
                 all_items[i].setCheckState(0, state)
                 if checked:
                     self._uncheck_ancestors(all_items[i])
-        except ValueError:
-            state = Qt.Checked if checked else Qt.Unchecked
-            end_item.setCheckState(0, state)
-            if checked:
-                self._uncheck_ancestors(end_item)
+        except (ValueError, RuntimeError):
+            # B7：start_item 可能来自刷新前已销毁的控件。此时退化为只勾选终点，
+            # 且终点若也已失效则静默放弃，绝不让异常冒泡到事件循环
+            try:
+                state = Qt.Checked if checked else Qt.Unchecked
+                end_item.setCheckState(0, state)
+                if checked:
+                    self._uncheck_ancestors(end_item)
+            except RuntimeError:
+                pass
 
     def add_material_row(self, parent_node=None):
         """

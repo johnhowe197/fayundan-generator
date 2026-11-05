@@ -187,9 +187,22 @@ class ShippingExporter:
                     # 默认自动换行
                     cell.alignment = Alignment(wrap_text=True, vertical='center')
 
+                    # 文本型公式注入防护：pandas/openpyxl 会把以 '=' 开头的
+                    # 字符串识别为公式，这里强制标记为字符串以保留原文（A10）
+                    if isinstance(cell.value, str) and cell.value.startswith('='):
+                        cell.data_type = 's'
+
                     # 数字列右对齐
                     if col in [6, 7, 8]:  # 数量、净重、总重
                         cell.alignment = Alignment(horizontal='right', wrap_text=True, vertical='center')
+
+                    # 数字格式：数量整数、净重 4 位、总重 2 位
+                    if col == 6:
+                        cell.number_format = '0'
+                    elif col == 7:
+                        cell.number_format = '0.0000'
+                    elif col == 8:
+                        cell.number_format = '0.00'
 
                     # 检查是否是发运主体行（物料号列显示"发运主体"）
                     物料号_cell = ws.cell(row=row, column=2)
@@ -206,9 +219,8 @@ class ShippingExporter:
                         for col in range(5, 11):
                             ws.cell(row=row, column=col).border = thin_border
                     else:
-                        # 数据行：总重列使用公式
-                        if col == 8:  # 总重(kg)列
-                            cell.value = f'=F{row}*G{row}'
+                        # 数据行：总重已在 _prepare_grouped_data 中保留计算器数值，
+                        # 不再写 =F*G 公式（A4：Excel/CSV/项目总重三处口径一致）
                         # 发运类型列居中
                         if col == 9:
                             cell.alignment = Alignment(horizontal='center', wrap_text=True, vertical='center')
@@ -354,7 +366,8 @@ class ShippingExporter:
                 '名称': row.get('名称', ''),
                 '数量': row.get('数量', 0),
                 '净重': row.get('净重', 0),
-                '总重(kg)': '',  # 将在Excel中使用公式计算
+                # 保留计算器聚合后的总重数值，不再置空交给 Excel 公式（A4）
+                '总重(kg)': row.get('总重(kg)', row.get('总重', '')),
                 '发运类型': shipping_method,
                 '备注': row.get('备注', '')
             }
@@ -427,8 +440,30 @@ class ShippingExporter:
         file_path = Path(file_path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        df.to_csv(file_path, index=False, encoding=encoding)
+        # CSV 公式注入防护（A10）：对以 = + - @ 开头的文本加前导单引号
+        self._sanitize_csv_text(df).to_csv(file_path, index=False, encoding=encoding)
         return str(file_path)
+
+    def _sanitize_csv_text(self, df: pd.DataFrame) -> pd.DataFrame:
+        """CSV 文本公式注入转义：', =, +, -, @ 等前缀在 Excel 打开时可能被当作公式
+
+        只处理文本列；已以单引号开头的值不重复加前缀。
+        """
+        sanitized = df.copy()
+
+        def escape(value):
+            if (isinstance(value, str) and value
+                    and value[0] in ('=', '+', '-', '@')
+                    and not value.startswith("'")):
+                return "'" + value
+            return value
+
+        for col in sanitized.columns:
+            # 兼容 object 与 pandas 字符串扩展 dtype（StringDtype）
+            if (sanitized[col].dtype == object
+                    or pd.api.types.is_string_dtype(sanitized[col].dtype)):
+                sanitized[col] = sanitized[col].map(escape)
+        return sanitized
 
     def export_to_pdf(self, df: pd.DataFrame, file_path: str) -> str:
         """

@@ -14,6 +14,34 @@ from PyQt5.QtCore import Qt
 from core.entity_config import EntityConfigManager
 
 
+def _cell_text(value) -> str:
+    """安全读取单元格文本：None/NaN/'nan'/'None'/'null'/空白 → 空字符串"""
+    if value is None:
+        return ''
+    try:
+        if value != value:  # NaN
+            return ''
+    except Exception:
+        pass
+    s = str(value).strip()
+    return '' if s in ('', 'nan', 'NaN', 'None', 'null') else s
+
+
+def _entity_code(value) -> str:
+    """规范化发运主体代码：1.0/1 → '01'，'01' 保持，98 → '98'，非数字原样"""
+    s = _cell_text(value)
+    if not s:
+        return ''
+    # 数值型读入：1.0 → 1
+    if s.endswith('.0'):
+        head = s[:-2]
+        if head.lstrip('+-').isdigit():
+            s = head
+    if s.isdigit():
+        return s.zfill(2)
+    return s
+
+
 class EntityMixin:
     """发运主体定义 UI Mixin"""
 
@@ -37,6 +65,18 @@ class EntityMixin:
         preset_combo.setMinimumWidth(200)
 
         entity_mgr = EntityConfigManager()
+
+        # 配置读取失败提示（A8）：损坏/结构异常的文件已被备份并使用默认值，
+        # 必须让用户知道，避免误以为配置正常而覆盖保存
+        entity_mgr.load_definitions()
+        def_error = entity_mgr.last_load_error
+        entity_mgr.load_presets()
+        preset_error = entity_mgr.last_load_error
+        if def_error or preset_error:
+            QMessageBox.warning(
+                self, '配置读取警告',
+                '\n\n'.join(e for e in (def_error, preset_error) if e))
+
         preset_names = entity_mgr.get_preset_names()
         preset_combo.addItems(preset_names)
 
@@ -194,9 +234,9 @@ class EntityMixin:
         try:
             entities = []
             for row in range(table.rowCount()):
-                code = table.item(row, 0).text() if table.item(row, 0) else ''
-                name = table.item(row, 1).text() if table.item(row, 1) else ''
-                desc = table.item(row, 2).text() if table.item(row, 2) else ''
+                code = _entity_code(table.item(row, 0).text() if table.item(row, 0) else '')
+                name = _cell_text(table.item(row, 1).text() if table.item(row, 1) else '')
+                desc = _cell_text(table.item(row, 2).text() if table.item(row, 2) else '')
                 if code:
                     entities.append((code, name, desc))
 
@@ -311,8 +351,8 @@ class EntityMixin:
 
             entities_dict = {}
             for row in range(table.rowCount()):
-                code = table.item(row, 0).text() if table.item(row, 0) else ''
-                name = table.item(row, 1).text() if table.item(row, 1) else ''
+                code = _entity_code(table.item(row, 0).text() if table.item(row, 0) else '')
+                name = _cell_text(table.item(row, 1).text() if table.item(row, 1) else '')
                 if code:
                     entities_dict[code] = name
 
@@ -578,10 +618,11 @@ class EntityMixin:
 
         if file_path:
             try:
+                # 代码列按字符串读取，避免 "01" 被读成整数 1 丢失前导零（A9）
                 if file_path.endswith('.csv'):
-                    df = pd.read_csv(file_path, encoding='utf-8-sig')
+                    df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
                 else:
-                    df = pd.read_excel(file_path)
+                    df = pd.read_excel(file_path, dtype=str)
 
                 required_columns = ['代码', '名称', '说明']
                 if not all(col in df.columns for col in required_columns):
@@ -594,12 +635,16 @@ class EntityMixin:
                 table.setRowCount(0)
 
                 for _, row in df.iterrows():
+                    code = _entity_code(row.get('代码', ''))
+                    # 跳过代码为空的行，避免写入空代码或 'nan'
+                    if not code:
+                        continue
                     row_count = table.rowCount()
                     table.insertRow(row_count)
-                    table.setItem(row_count, 0, QTableWidgetItem(str(row.get('代码', ''))))
-                    table.setItem(row_count, 1, QTableWidgetItem(str(row.get('名称', ''))))
-                    table.setItem(row_count, 2, QTableWidgetItem(str(row.get('说明', ''))))
+                    table.setItem(row_count, 0, QTableWidgetItem(code))
+                    table.setItem(row_count, 1, QTableWidgetItem(_cell_text(row.get('名称', ''))))
+                    table.setItem(row_count, 2, QTableWidgetItem(_cell_text(row.get('说明', ''))))
 
-                QMessageBox.information(self, '成功', f'已导入 {len(df)} 条发运主体定义')
+                QMessageBox.information(self, '成功', f'已导入 {table.rowCount()} 条发运主体定义')
             except Exception as e:
                 QMessageBox.critical(self, '错误', f'导入失败:\n{str(e)}')

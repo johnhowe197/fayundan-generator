@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
@@ -90,6 +91,8 @@ class EntityConfigManager:
         self.config_dir = Path(config_dir)
         # 最近一次保存失败的原因（供 UI 向用户展示真实错误，杜绝"假保存成功"）
         self.last_error = ''
+        # 最近一次读取失败的原因（文件损坏/带 BOM/结构异常；A8）
+        self.last_load_error = ''
         try:
             self.config_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -257,6 +260,45 @@ class EntityConfigManager:
 
     # ========== 发运主体定义 ==========
 
+    def _backup_corrupt_file(self, path: Path) -> Optional[Path]:
+        """把损坏的配置文件移走备份为 <name>.corrupt.<时间>.bak"""
+        try:
+            # 精确到微秒，避免同一秒内多次损坏备份互相覆盖（P2-2）
+            stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+            backup = path.with_name(f'{path.name}.corrupt.{stamp}.bak')
+            os.replace(path, backup)
+            return backup
+        except OSError as e:
+            logging.error(f"备份损坏配置文件失败: {e}")
+            return None
+
+    def _load_json_file(self, path: Path):
+        """读取 JSON 配置：文件不存在返回 None（静默用默认值）；
+        读取/解析失败则备份原文件、记录 last_load_error 并返回 None（A8）"""
+        if not path.exists():
+            return None
+        try:
+            # utf-8-sig 兼容带 BOM 的 JSON
+            with open(path, 'r', encoding='utf-8-sig') as f:
+                return json.load(f)
+        except Exception as e:
+            self._backup_corrupt_file(path)
+            self.last_load_error = (
+                f'读取 {path.name} 失败（{e}），原文件已备份为 .corrupt.*.bak，'
+                '本次使用默认配置')
+            logging.error(self.last_load_error)
+            return None
+
+    @staticmethod
+    def _is_valid_definitions(entities) -> bool:
+        """校验定义结构：必须是 [(code, name, desc), ...] 序列"""
+        if not isinstance(entities, list):
+            return False
+        for item in entities:
+            if not isinstance(item, (list, tuple)) or len(item) != 3:
+                return False
+        return True
+
     def load_definitions(self) -> List[Tuple[str, str, str]]:
         """
         加载发运主体定义（自动确保锁定代码存在）
@@ -264,13 +306,18 @@ class EntityConfigManager:
         Returns:
             发运主体列表，格式为 [(code, name, desc), ...]
         """
-        entities = None
-        try:
-            if self._entity_file.exists():
-                with open(self._entity_file, 'r', encoding='utf-8') as f:
-                    entities = json.load(f)
-        except Exception as e:
-            logging.error(f"加载发运主体定义失败: {e}")
+        self.last_load_error = ''
+        entities = self._load_json_file(self._entity_file)
+
+        if entities is not None and not self._is_valid_definitions(entities):
+            # 合法 JSON 但结构不对（如顶层是 dict）：同样备份并回退默认值，
+            # 避免后续 {code for code,name,desc in entities} 抛未捕获异常
+            self._backup_corrupt_file(self._entity_file)
+            self.last_load_error = (
+                f'{self._entity_file.name} 结构不正确（应为 [代码, 名称, 说明] 列表），'
+                '原文件已备份为 .corrupt.*.bak，本次使用默认配置')
+            logging.error(self.last_load_error)
+            entities = None
 
         if entities is None:
             entities = self.DEFAULT_ENTITIES.copy()
@@ -340,12 +387,19 @@ class EntityConfigManager:
             "current_preset": "输送机发运"
         }
 
-        try:
-            if self._preset_file.exists():
-                with open(self._preset_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except Exception as e:
-            logging.error(f"加载预设配置失败: {e}")
+        self.last_load_error = ''
+        config = self._load_json_file(self._preset_file)
+        if config is not None:
+            valid = (isinstance(config, dict)
+                     and isinstance(config.get('presets'), dict)
+                     and isinstance(config.get('current_preset', ''), str))
+            if valid:
+                return config
+            self._backup_corrupt_file(self._preset_file)
+            self.last_load_error = (
+                f'{self._preset_file.name} 结构不正确（presets 应为字典），'
+                '原文件已备份为 .corrupt.*.bak，本次使用默认配置')
+            logging.error(self.last_load_error)
 
         return default_config
 

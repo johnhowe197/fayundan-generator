@@ -16,13 +16,44 @@ from core.exporter import ShippingExporter
 class PreviewMixin:
     """计算、预览、导出 Mixin"""
 
+    def _invalidate_shipping_order(self, message: bool = False):
+        """统一失效入口（B8）：配置发生变更后清空旧发运单与预览统计
+
+        任何会改变计算结果的路径（编辑配置、撤销/恢复、批量删改、加载配置）
+        都应调用本方法，避免界面继续显示/导出变更前的结果。
+        """
+        self.current_shipping_order = None
+        if hasattr(self, 'table_widget'):
+            self.refresh_table()
+        self._update_total_weight()
+        if message:
+            self.statusBar().showMessage('配置已变更，请重新计算')
+
     def calculate(self):
         """执行计算"""
         if not self.tree_builder.root:
             QMessageBox.warning(self, '警告', '请先导入BOM数据！')
             return
 
+        # A2-1：存在未挂载节点时，计算前确认（默认否），避免静默产出漏项发运单
+        issues = self.tree_builder.validate_structure()
+        if self.tree_builder.orphan_nodes:
+            detail = '\n'.join(f'• {item}' for item in issues[:3])
+            reply = QMessageBox.question(
+                self, '结构异常',
+                f'检测到 {len(self.tree_builder.orphan_nodes)} 个未挂载节点，'
+                '它们不会参与本次计算。\n\n'
+                f'{detail}\n\n'
+                '是否仍继续计算？',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+
         try:
+            # B4：先清空旧结果，计算失败时绝不能让上次的发运单继续被预览/导出
+            self.current_shipping_order = None
             # 忙碌状态：等待光标 + 按钮禁用防重入；弹窗在 with 外
             with self._busy('正在计算...'):
                 self.calculator = ShippingCalculator(self.tree_builder)
@@ -44,6 +75,10 @@ class PreviewMixin:
                 f'可见节点: {visible_count} 个\n'
                 f'已隐藏节点: {hidden_count} 个（不参与计算）')
         except Exception as e:
+            # 计算失败：清空结果与预览表格/统计，避免导出失败前的旧数据
+            self.current_shipping_order = None
+            self.refresh_table()
+            self._update_total_weight()
             self.statusBar().showMessage('计算失败')
             QMessageBox.critical(self, '错误', f'计算失败:\n{str(e)}')
 

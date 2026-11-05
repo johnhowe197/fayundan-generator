@@ -37,6 +37,10 @@ class TreeMixin:
 
         self.tree_widget.clear()
 
+        # B7：clear() 销毁全部 QTreeWidgetItem，锚点必须同步重置，
+        # 否则刷新后 Shift 点击会引用已销毁的 C++ 对象
+        self.last_clicked_item = None
+
         # 构建树时断开信号，避免每个setText触发on_item_changed导致卡顿
         try:
             self.tree_widget.itemChanged.disconnect()
@@ -185,11 +189,15 @@ class TreeMixin:
 
     def _show_children(self, item, recursive=True):
         """
-        显示子节点
+        显示子节点（边界感知）
 
         Args:
             item: 树节点项
             recursive: 是否递归显示
+
+        边界感知（B9-1）：若某个子节点自身 expand_status='否'，则只恢复该
+        子节点本身的可见/可编辑状态，并继续隐藏其所有后代，不再向下展开；
+        避免重新展开父节点时把"否"边界之后的深层节点全部暴露或全部遗留隐藏。
         """
         # 恢复展开箭头
         item.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
@@ -199,7 +207,15 @@ class TreeMixin:
             # 恢复子节点的交互（包括可编辑）
             base_flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable | Qt.ItemIsEditable
             child.setFlags(base_flags)
-            if recursive:
+
+            child_node = child.data(1, Qt.UserRole)
+            if child_node is not None and child_node.expand_status == '否':
+                # 边界节点本身可见/可编辑，但其后代保持隐藏且不可编辑
+                if child_node.level > 0:
+                    child.setChildIndicatorPolicy(
+                        QTreeWidgetItem.ChildIndicatorPolicy.DontShowIndicator)
+                self._hide_children(child)
+            elif recursive:
                 self._show_children(child, recursive=True)
 
     def _has_children_with_config(self, node):

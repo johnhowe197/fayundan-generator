@@ -98,11 +98,13 @@ class ProgressFileManager:
         file_path = Path(file_path)
 
         # 读取 BOM 数据：按工作表名 'BOM数据' 显式读取，避免用户调换 sheet 顺序时
-        # 读到错误的工作表；旧版本文件无该名工作表时回退到第一个工作表
+        # 读到错误的工作表；旧版本文件无该名工作表时回退到第一个工作表。
+        # ID 列强制字符串读取，避免 19 位物料号被推断为浮点后精度丢失（A7）
+        id_dtype = {'子物料号': str, '父物料号': str}
         try:
-            df = pd.read_excel(str(file_path), sheet_name='BOM数据')
+            df = pd.read_excel(str(file_path), sheet_name='BOM数据', dtype=id_dtype)
         except (ValueError, KeyError):
-            df = pd.read_excel(str(file_path))
+            df = pd.read_excel(str(file_path), dtype=id_dtype)
         df = df.fillna('')
 
         # 验证必需字段
@@ -114,12 +116,14 @@ class ProgressFileManager:
         # 读取项目信息
         project_info = {}
         try:
-            excel_file = pd.ExcelFile(str(file_path))
-            if '项目信息' in excel_file.sheet_names:
-                proj_df = pd.read_excel(str(file_path), sheet_name='项目信息')
-                if not proj_df.empty:
-                    # 空字段填为空串，避免读回 NaN 后 str(nan)='nan' 灌入界面并随导出带出
-                    project_info = proj_df.fillna('').iloc[0].to_dict()
+            # 用 with 及时关闭 ExcelFile，避免 Windows 下文件句柄残留导致
+            # 进度文件无法立即删除/覆盖
+            with pd.ExcelFile(str(file_path)) as excel_file:
+                if '项目信息' in excel_file.sheet_names:
+                    proj_df = pd.read_excel(excel_file, sheet_name='项目信息')
+                    if not proj_df.empty:
+                        # 空字段填为空串，避免读回 NaN 后 str(nan)='nan' 灌入界面并随导出带出
+                        project_info = proj_df.fillna('').iloc[0].to_dict()
         except Exception:
             pass  # 旧版本没有项目信息表
 

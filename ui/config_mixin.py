@@ -30,6 +30,11 @@ class ConfigMixin:
         # 重复 _save_state 泛洪撤销栈。处理期间忽略重入事件。
         if getattr(self, '_in_item_changed', False):
             return
+        # 记录变更前的撤销栈与 dirty：列编辑在确认框被拒绝时需完整回滚，
+        # 不能留下无效果的撤销点或误置 dirty（P2-1）
+        undo_before = list(self._undo_stack)
+        redo_before = list(self._redo_stack)
+        was_dirty = self._dirty
         self._in_item_changed = True
         try:
             # 标记为未保存
@@ -49,14 +54,23 @@ class ConfigMixin:
             if column in [6, 7, 8, 9]:
                 self._save_state()
 
+            accepted = True
             if column == 6:  # 是否展开
-                self._handle_expand_change(item, node)
+                accepted = self._handle_expand_change(item, node)
             elif column == 7:  # 发运主体
-                self._handle_entity_change(item, node)
+                accepted = self._handle_entity_change(item, node)
             elif column == 8:  # 发运方式
-                self._handle_method_change(item, node)
+                accepted = self._handle_method_change(item, node)
             elif column == 9:  # 备注
                 node.remark = item.text(9)
+
+            if accepted is False:
+                # 用户在确认框取消：回滚本次 _save_state 的副作用
+                self._undo_stack[:] = undo_before
+                self._redo_stack[:] = redo_before
+                self._dirty = was_dirty
+                self._update_title()
+                self._update_undo_redo_buttons()
 
             # 统一更新背景色和状态显示
             self._update_item_style(item, node)
@@ -64,12 +78,16 @@ class ConfigMixin:
             self._in_item_changed = False
 
     def _handle_expand_change(self, item, node):
-        """处理是否展开列变化"""
+        """处理是否展开列变化
+
+        Returns:
+            True: 变更生效；False: 用户取消/自动回退，调用方应回滚撤销点
+        """
         value = item.text(6)
         # 叶子节点不能设为"是"
         if value == '是' and not node.children:
             item.setText(6, '否')
-            return
+            return False
         # 有发运配置的节点设为"是"时，需确认并清空配置
         if value == '是' and (node.shipping_entity or node.shipping_method or node.remark):
             reply = QMessageBox.question(
@@ -83,7 +101,7 @@ class ConfigMixin:
             )
             if reply != QMessageBox.Yes:
                 item.setText(6, '否')
-                return
+                return False
             # 清空配置
             node.shipping_entity = ''
             node.shipping_method = ''
@@ -95,9 +113,9 @@ class ConfigMixin:
             item.setText(7, self._get_entity_display_name(node.shipping_entity) if node.shipping_entity else '')
             item.setText(8, self._get_method_display_name(node.shipping_method) if node.shipping_method else '')
             item.setText(9, node.remark if node.remark else '')
-            # 恢复展开箭头
+            # 恢复展开箭头（B9-1：边界感知递归恢复，深层节点不再遗留隐藏）
             item.setChildIndicatorPolicy(item.ChildIndicatorPolicy.ShowIndicator)
-            self._show_children(item, recursive=False)
+            self._show_children(item, recursive=True)
             self.tree_widget.expandItem(item)
         else:
             # 检查子孙节点是否有发运配置
@@ -114,7 +132,7 @@ class ConfigMixin:
                 if reply != QMessageBox.Yes:
                     node.expand_status = '是'
                     item.setText(6, '是')
-                    return
+                    return False
             self._clear_children_config(node)
             self._update_children_display(item)
             # 恢复实际显示值
@@ -129,11 +147,69 @@ class ConfigMixin:
 
         node.calculate_final_quantity()
         self.update_status_bar()
+        return True
+
+    def _confirm_collapse_descendants(self, node):
+        """节点由"是"隐式变"否"前，若子孙已维护配置则确认并清空（B9-2）
+
+        Returns:
+            True: 无需确认或用户确认（子孙配置已清空，可继续置否）
+            False: 用户取消，调用方应回退本次变更
+        """
+        if not self._has_children_with_config(node):
+            return True
+        reply = QMessageBox.question(
+            self, '确认设置',
+            '该节点的子物料已维护发运配置！\n\n'
+            '设为"否"（发运单元）后将清除所有子物料的发运配置，\n'
+            '它们将不再作为独立发运单元参与统计。\n\n'
+            '是否继续？',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return False
+        self._clear_children_config(node)
+        return True
+
+    def _confirm_batch_collapse(self, nodes):
+        """批量由"是"变"否"前汇总确认一次（B9-2）
+
+        确认后清除相关节点的子孙配置；拒绝则整批取消。
+        """
+        targets = [
+            n for n in nodes
+            if n.expand_status == '是' and self._has_children_with_config(n)
+        ]
+        if not targets:
+            return True
+        reply = QMessageBox.question(
+            self, '确认设置',
+            f'选中的节点中有 {len(targets)} 个的子物料已维护发运配置！\n\n'
+            '设为发运单元后将清除这些子物料的发运配置，\n'
+            '它们将不再作为独立发运单元参与统计。\n\n'
+            '是否继续？',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return False
+        for node in targets:
+            self._clear_children_config(node)
+        return True
 
     def _handle_entity_change(self, item, node):
-        """处理发运主体列变化"""
+        """处理发运主体列变化
+
+        Returns:
+            True: 变更生效；False: 用户取消（调用方回滚撤销点）
+        """
         value = item.text(7)
         entity_code = value.split('-')[0] if '-' in value else value
+        old_entity = node.shipping_entity
+        old_method = node.shipping_method
+        old_expand = node.expand_status
+
         node.shipping_entity = entity_code
         # 应用自动规则（98→B打捆, 99→C装箱）
         from core.entity_config import EntityConfigManager
@@ -141,7 +217,20 @@ class ConfigMixin:
         # 更新发运方式显示
         if node.shipping_method:
             item.setText(8, self._get_method_display_name(node.shipping_method))
-        if entity_code and node.expand_status == '是':
+        if entity_code and old_expand == '是':
+            # B9-2：由"是"隐式变"否"时，先确认是否清除子孙配置
+            if not self._confirm_collapse_descendants(node):
+                # 用户拒绝：回退本次主体/方式变更
+                node.shipping_entity = old_entity
+                node.shipping_method = old_method
+                node.expand_status = old_expand
+                item.setText(7, self._get_entity_display_name(old_entity) if old_entity else '')
+                item.setText(8, self._get_method_display_name(old_method) if old_method else '')
+                item.setText(6, old_expand)
+                node.calculate_final_quantity()
+                self.update_status_bar()
+                return False
+            self._update_children_display(item)
             node.expand_status = '否'
             item.setText(6, '否')
             if node.level > 0:
@@ -149,13 +238,31 @@ class ConfigMixin:
             self._hide_children(item)
         node.calculate_final_quantity()
         self.update_status_bar()
+        return True
 
     def _handle_method_change(self, item, node):
-        """处理发运方式列变化"""
+        """处理发运方式列变化
+
+        Returns:
+            True: 变更生效；False: 用户取消（调用方回滚撤销点）
+        """
         value = item.text(8)
         method_code = value[0] if value else ''
+        old_method = node.shipping_method
+        old_expand = node.expand_status
+
         node.shipping_method = method_code
-        if value and node.expand_status == '是':
+        if value and old_expand == '是':
+            # B9-2：由"是"隐式变"否"时，先确认是否清除子孙配置
+            if not self._confirm_collapse_descendants(node):
+                node.shipping_method = old_method
+                node.expand_status = old_expand
+                item.setText(8, self._get_method_display_name(old_method) if old_method else '')
+                item.setText(6, old_expand)
+                node.calculate_final_quantity()
+                self.update_status_bar()
+                return False
+            self._update_children_display(item)
             node.expand_status = '否'
             item.setText(6, '否')
             if node.level > 0:
@@ -163,6 +270,7 @@ class ConfigMixin:
             self._hide_children(item)
         node.calculate_final_quantity()
         self.update_status_bar()
+        return True
 
     def _show_selection_menu(self, item, column, pos):
         """
@@ -404,7 +512,12 @@ class ConfigMixin:
             node: BOM 节点
             entity: 发运主体代码
         """
-        self._save_state()
+        # 先捕获快照（不压栈）：B9-2 确认清除子孙配置时，撤销需能回到清除前
+        snapshot = self._save_state_snapshot()
+        if node.expand_status == '是':
+            if not self._confirm_collapse_descendants(node):
+                return
+        self._push_undo_snapshot(snapshot)
         node.shipping_entity = entity
         # 应用自动规则（98→B打捆，99→C装箱）
         from core.entity_config import EntityConfigManager
@@ -423,7 +536,12 @@ class ConfigMixin:
             node: BOM 节点
             method: 发运方式代码
         """
-        self._save_state()
+        # 先捕获快照（不压栈）：B9-2 确认清除子孙配置时，撤销需能回到清除前
+        snapshot = self._save_state_snapshot()
+        if node.expand_status == '是':
+            if not self._confirm_collapse_descendants(node):
+                return
+        self._push_undo_snapshot(snapshot)
         node.shipping_method = method
         if node.expand_status == '是':
             node.expand_status = '否'
@@ -448,7 +566,11 @@ class ConfigMixin:
                     checked = [node]
         if not checked:
             return
-        self._save_state()
+        # 先捕获快照（不压栈），确认通过后再提交；拒绝则整批取消（B9-2）
+        snapshot = self._save_state_snapshot()
+        if not self._confirm_batch_collapse(checked):
+            return
+        self._push_undo_snapshot(snapshot)
         for node in checked:
             node.shipping_entity = entity_code
             # 应用自动规则（98→B打捆，99→C装箱）
@@ -491,7 +613,11 @@ class ConfigMixin:
                     checked = [node]
         if not checked:
             return
-        self._save_state()
+        # 先捕获快照（不压栈），确认通过后再提交；拒绝则整批取消（B9-2）
+        snapshot = self._save_state_snapshot()
+        if not self._confirm_batch_collapse(checked):
+            return
+        self._push_undo_snapshot(snapshot)
         cfg = self._custom_config
         for node in checked:
             node.shipping_entity = cfg['shipping_entity']
@@ -716,10 +842,30 @@ class ConfigMixin:
             return
 
         self._save_state()
-        for node in checked:
-            node.remark = text
-            for i in range(self.tree_widget.topLevelItemCount()):
-                self._update_item_remark(self.tree_widget.topLevelItem(i), node, text)
-        self._dirty = True
-        self._update_title()
+
+        # 一次性建立 uid -> item 映射，避免每个节点都从所有顶层项重新递归查找（B2）
+        item_map = {}
+
+        def collect(item):
+            node = item.data(1, Qt.UserRole)
+            if node:
+                item_map[node.uid] = item
+            for i in range(item.childCount()):
+                collect(item.child(i))
+
+        for i in range(self.tree_widget.topLevelItemCount()):
+            collect(self.tree_widget.topLevelItem(i))
+
+        # 抑制 itemChanged 重入：批量 setText 不应为每个节点再压一次撤销快照
+        prev_in_item_changed = getattr(self, '_in_item_changed', False)
+        self._in_item_changed = True
+        try:
+            for node in checked:
+                node.remark = text
+                item = item_map.get(node.uid)
+                if item is not None:
+                    item.setText(9, text)
+        finally:
+            self._in_item_changed = prev_in_item_changed
+
         self.statusBar().showMessage(f'已为 {len(checked)} 个节点设置备注')

@@ -156,10 +156,13 @@ class MainWindow(QMainWindow, TreeMixin, ConfigMixin, BatchMixin,
             msg.setWindowTitle('确认退出')
             msg.setText('当前有未保存的修改，确定要退出吗？')
             msg.setIcon(QMessageBox.Question)
-            btn_save = msg.addButton('保存', QMessageBox.AcceptRole)
-            btn_discard = msg.addButton('不保存', QMessageBox.RejectRole)
-            btn_cancel = msg.addButton('取消', QMessageBox.NoRole)
+            btn_save = msg.addButton('保存并退出', QMessageBox.AcceptRole)
+            btn_discard = msg.addButton('不保存并退出', QMessageBox.RejectRole)
+            btn_cancel = msg.addButton('返回编辑', QMessageBox.NoRole)
             msg.setDefaultButton(btn_save)
+            # Esc 默认会绑定到 RejectRole 按钮（即"不保存并退出"），容易误触导致
+            # 未保存修改被直接丢弃；显式把 Esc 绑定为"返回编辑"，保持留在程序内
+            msg.setEscapeButton(btn_cancel)
             msg.exec_()
             clicked = msg.clickedButton()
             if clicked == btn_save:
@@ -292,10 +295,8 @@ class MainWindow(QMainWindow, TreeMixin, ConfigMixin, BatchMixin,
                         if in_checkbox:
                             modifiers = event.modifiers()
 
-                            # 勾选变更前保存撤销快照：覆盖普通点击/Shift区间/Ctrl
-                            # 三条路径及 _uncheck_ancestors 父子联动的全部副作用，
-                            # 并统一标记未保存（_save_state 内部置 _dirty 并更新标题）
-                            self._save_state()
+                            # 勾选是纯 UI 状态（checked_uids 会随下一次配置快照保存），
+                            # 不再压撤销栈、不置 dirty（B6），避免勾选挤爆编辑历史
 
                             if modifiers & Qt.ShiftModifier:
                                 if self.last_clicked_item:

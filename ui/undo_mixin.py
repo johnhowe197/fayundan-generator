@@ -24,6 +24,12 @@ from models.bom_node import BOMNode
 class UndoMixin:
     """撤销/恢复 Mixin"""
 
+    def _invalidate_preview_after_change(self, message: bool = False):
+        """若宿主提供预览失效入口则调用（UndoMixin 可脱离 PreviewMixin 独立测试）"""
+        hook = getattr(self, '_invalidate_shipping_order', None)
+        if hook:
+            hook(message=message)
+
     @staticmethod
     def _node_key(node):
         """生成节点的快照键（使用稳定唯一 uid）"""
@@ -112,6 +118,8 @@ class UndoMixin:
         # 避免右键设置/拆分/删除等操作后忘记保存而静默丢失改动
         self._dirty = True
         self._update_title()
+        # 配置类变更统一清空旧发运单，避免预览/导出继续使用变更前结果（B8）
+        self._invalidate_preview_after_change()
 
     def _push_undo_snapshot(self, state):
         """
@@ -126,6 +134,13 @@ class UndoMixin:
             self._undo_stack.pop(0)
         self._redo_stack.clear()
         self._update_undo_redo_buttons()
+        # 与 _save_state 保持一致：确认提交的快照同样属于未保存变更。
+        # 集中在此设置，避免 set_node_entity / _quick_apply_entity 等
+        # 走“先捕获、后提交”的调用方遗漏 dirty 导致关窗不提示（P1-1）
+        self._dirty = True
+        self._update_title()
+        # 快照已提交 = 本次变更已生效，清空旧发运单（B8）
+        self._invalidate_preview_after_change()
 
     def _restore_state(self, state):
         """
@@ -245,6 +260,9 @@ class UndoMixin:
         if checked_uids is not None:
             self._apply_checked_uids(checked_uids)
 
+        # 撤销/恢复改变了配置，旧发运单必须失效（B8）
+        self._invalidate_preview_after_change(message=True)
+
     def undo(self):
         """撤销上一步操作
 
@@ -267,10 +285,11 @@ class UndoMixin:
         self._undo_stack.pop()
         self._redo_stack.append(current_state)
         self._update_undo_redo_buttons()
-        # 撤销后检查 dirty 标记：如果撤销到初始状态（栈为空），清除 dirty 标记
-        if len(self._undo_stack) == 0 and self._dirty:
-            self._dirty = False
-            self._update_title()
+        # 撤销恢复的是历史状态，与磁盘内容未必一致：统一置 dirty（fail-safe），
+        # 宁可多提示保存，也不静默丢弃修改。不再因“撤销到栈空”清除 dirty
+        # （B1：初始导入本身未保存时，栈空撤销会被误判为已保存）
+        self._dirty = True
+        self._update_title()
         self.statusBar().showMessage(f'已撤销（还可撤销 {len(self._undo_stack)} 步）')
 
     def redo(self):
@@ -290,6 +309,9 @@ class UndoMixin:
         self._redo_stack.pop()
         self._undo_stack.append(current_state)
         self._update_undo_redo_buttons()
+        # B1：恢复出的修改同样属于未保存变更
+        self._dirty = True
+        self._update_title()
         self.statusBar().showMessage(f'已恢复（还可恢复 {len(self._redo_stack)} 步）')
 
     def _clear_undo_redo(self):
@@ -302,6 +324,8 @@ class UndoMixin:
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._update_undo_redo_buttons()
+        # 切换数据集同样意味着旧发运单不可再用（B8）
+        self._invalidate_preview_after_change()
 
     def _update_undo_redo_buttons(self):
         """更新撤销/恢复按钮状态"""

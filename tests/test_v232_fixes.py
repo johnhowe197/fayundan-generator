@@ -277,9 +277,15 @@ check('备注未被清空', remark_node.remark == '仅备注')
 # ============ 8. batch_config 批量设"展开=是"：清空配置、备注不写入 ============
 print('== 8. 批量设置"展开=是"：清空配置、备注不写入 ==')
 w8, nodes8 = make_window()
-a1_item8 = find_item_by_uid(w8, nodes8['a1'].uid)
-a1_item8.setCheckState(0, Qt.Checked)
-check('前置：A1 已勾选', len(w8.get_checked_nodes()) == 1)
+# 使用有子节点的非叶子节点 A 验证"展开=是"的清空语义
+# （叶子节点 A1 现在会被 B3 叶子保护跳过，另见 test_v26_review_fixes.py）
+nodes8['a'].shipping_entity = '02'
+nodes8['a'].shipping_method = 'B'
+nodes8['a'].remark = '旧备注'
+a_item8 = find_item_by_uid(w8, nodes8['a'].uid)
+a_item8.setCheckState(0, Qt.Checked)
+check('前置：A 已勾选且有旧配置',
+      len(w8.get_checked_nodes()) == 1 and nodes8['a'].shipping_entity == '02')
 
 
 def _fake_batch_exec(self):
@@ -300,10 +306,10 @@ try:
     w8.batch_config()
 finally:
     QDialog.exec_ = _real_batch_exec
-check('A1.expand_status=是', nodes8['a1'].expand_status == '是')
-check('A1 发运主体被清空', nodes8['a1'].shipping_entity == '')
-check('A1 发运方式被清空', nodes8['a1'].shipping_method == '')
-check('A1 备注未被写入', nodes8['a1'].remark == '', f"实际 {nodes8['a1'].remark!r}")
+check('A.expand_status=是', nodes8['a'].expand_status == '是')
+check('A 发运主体被清空', nodes8['a'].shipping_entity == '')
+check('A 发运方式被清空', nodes8['a'].shipping_method == '')
+check('A 备注未被写入', nodes8['a'].remark == '', f"实际 {nodes8['a'].remark!r}")
 
 # ============ 9. _restore_state 恢复后统一重算数量 ============
 print('== 9. 撤销恢复后自顶向下重算最终数量 ==')

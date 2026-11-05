@@ -4,11 +4,74 @@
 将平面BOM数据转换为树结构
 """
 
+import re
+from decimal import Decimal, InvalidOperation
+
 import pandas as pd
 from typing import Dict, List, Optional
 from pathlib import Path
 
 from models.bom_node import BOMNode
+from core.bom_parser import parse_level
+
+
+def _safe_cell_text(value) -> str:
+    """安全读取单元格文本：None/NaN/'nan'/'None'/'null'/空白 → 空字符串"""
+    if value is None:
+        return ''
+    if isinstance(value, float) and pd.isna(value):
+        return ''
+    try:
+        if pd.isna(value):
+            return ''
+    except (TypeError, ValueError):
+        pass
+    s = str(value).strip()
+    return '' if s in ('', 'nan', 'NaN', 'None', 'null') else s
+
+
+def _norm_entity_code(value) -> str:
+    """规范化发运主体代码：'1.0'→'01'、'1'→'01'、'98'→'98'，非数字原样返回"""
+    s = _safe_cell_text(value)
+    if not s:
+        return ''
+    m = re.fullmatch(r'([+-]?\d+)\.0+', s)
+    if m:
+        s = m.group(1)
+    if s.isdigit():
+        return s.zfill(2)
+    return s
+
+
+def _norm_id(val) -> str:
+    """规范化物料号：去除数值型读入产生的 .0 后缀与科学计数法表示"""
+    if val is None:
+        return ''
+    if isinstance(val, float) and pd.isna(val):
+        return ''
+    try:
+        if pd.isna(val):
+            return ''
+    except (TypeError, ValueError):
+        pass
+    s = str(val).strip()
+    if s == '' or s.lower() in ('nan', 'none', 'null'):
+        return ''
+
+    # 纯数字 + .0 后缀：直接截断，避免 float 转换丢失长物料号精度
+    m = re.fullmatch(r'([+-]?\d+)\.0+', s)
+    if m:
+        return m.group(1)
+
+    # 科学计数法（如 1.2345678901234568e+18）：用 Decimal 还原为整数串
+    if re.fullmatch(r'[+-]?\d+(?:\.\d+)?[eE][+-]?\d+', s):
+        try:
+            d = Decimal(s)
+            if d == d.to_integral_value():
+                return format(d, 'f').split('.')[0]
+        except (InvalidOperation, ValueError):
+            pass
+    return s
 
 
 class TreeBuilder:
@@ -19,6 +82,11 @@ class TreeBuilder:
         self.root: Optional[BOMNode] = None
         self.all_nodes: List[BOMNode] = []
         self.project_id: str = ""
+        # 结构校验结果（A2-1）：未挂载节点与结构问题描述，供导入/计算前提示
+        self.orphan_nodes: List[BOMNode] = []
+        self.structure_issues: List[str] = []
+        # 配置加载时未匹配的配置行提示（A6）
+        self.config_load_warnings: List[str] = []
 
     def build_from_dataframe(self, df: pd.DataFrame) -> BOMNode:
         """
@@ -66,18 +134,6 @@ class TreeBuilder:
 
         node_counter = 0  # 全局唯一 ID
 
-        def _norm_id(val):
-            """规范化物料号：去除数值型读入产生的 .0 后缀（如 12345.0 → 12345）"""
-            if val is None or (isinstance(val, float) and pd.isna(val)):
-                return ''
-            s = str(val).strip()
-            if s.endswith('.0'):
-                try:
-                    return str(int(float(s)))
-                except ValueError:
-                    return s
-            return s
-
         for row_idx, row in df.iterrows():
             material_id = _norm_id(row.get('子物料号', ''))
             parent_id = _norm_id(row.get('父物料号', ''))
@@ -85,21 +141,10 @@ class TreeBuilder:
             if not material_id:
                 continue
 
-            # 兼容"层号"和"level"列，处理带点格式（如"..3"→3）和浮点数（如2.0→2）
+            # 复用 bom_parser.parse_level，兼容"层号"和"level"列、
+            # 带点格式（如"..3"→3）以及浮点数（如 2.0→2）
             raw_level = row.get('层号', row.get('level', 0))
-            if pd.isna(raw_level) or str(raw_level).strip() == '':
-                child_level = 0
-            else:
-                level_str = str(raw_level).strip()
-                # 处理浮点数格式：2.0 → 2
-                if level_str.endswith('.0'):
-                    try:
-                        child_level = int(float(level_str))
-                    except ValueError:
-                        child_level = 0
-                else:
-                    level_str = level_str.lstrip('.')
-                    child_level = int(level_str) if level_str.isdigit() else 0
+            child_level = parse_level(raw_level)
 
             # 创建节点
             def _safe_str(val):
@@ -176,6 +221,9 @@ class TreeBuilder:
         if self.root:
             self._recompute_subtree(self.root)
 
+        # 建树后立即做结构校验（A2-1）：仅检测、不改动挂载算法
+        self.validate_structure()
+
         return self.root
 
     def _recompute_subtree(self, node: BOMNode):
@@ -189,6 +237,77 @@ class TreeBuilder:
         for child in node.children:
             self._recompute_subtree(child)
 
+    def validate_structure(self) -> List[str]:
+        """校验树结构完整性（A2-1：只检测，不改变挂载算法）
+
+        检测内容：
+        - 从 root 不可达的节点（孤儿节点，不会进入发运单）
+        - 多个顶级节点（level=0 或父物料号为空）
+        - 孤儿节点找不到层级为 child_level-1 的父节点（层级不匹配）
+
+        Returns:
+            结构问题描述列表（为空表示结构正常）
+        """
+        self.orphan_nodes = []
+        issues: List[str] = []
+
+        if not self.all_nodes:
+            self.structure_issues = issues
+            return issues
+
+        reachable = set()
+        if self.root:
+            def walk(node):
+                if id(node) in reachable:
+                    return
+                reachable.add(id(node))
+                for child in node.children:
+                    walk(child)
+            walk(self.root)
+
+        orphans = [n for n in self.all_nodes if id(n) not in reachable]
+        self.orphan_nodes = orphans
+
+        roots = [n for n in self.all_nodes if n.level == 0 or not n.parent_id]
+        if len(roots) > 1:
+            codes = '、'.join(n.material_id for n in roots[:10])
+            issues.append(f'存在 {len(roots)} 个顶级节点（level=0/父物料号为空）：{codes}')
+
+        if orphans:
+            # 按父物料号分组，便于用户定位
+            groups: Dict[str, List[BOMNode]] = {}
+            for node in orphans:
+                groups.setdefault(node.parent_id or '（空）', []).append(node)
+            parts = []
+            for parent_id, group in list(groups.items())[:10]:
+                parts.append(f'父物料号 {parent_id} 下 {len(group)} 个')
+            issues.append(
+                f'存在 {len(orphans)} 个未挂载节点（不会参与发运单计算）：'
+                + '；'.join(parts)
+            )
+
+            # 层级不匹配：找不到 level = child_level - 1 的同物料父节点
+            mismatched = []
+            for node in orphans:
+                if not node.parent_id:
+                    continue
+                expected_level = node.level - 1
+                found = any(
+                    p.material_id == node.parent_id and p.level == expected_level and p is not node
+                    for p in self.all_nodes
+                )
+                if not found:
+                    mismatched.append(node)
+            if mismatched:
+                sample = '、'.join(
+                    f'{n.material_id}(level={n.level}, 父={n.parent_id or "空"})'
+                    for n in mismatched[:10]
+                )
+                issues.append(f'存在 {len(mismatched)} 个层级不匹配/父节点缺失：{sample}')
+
+        self.structure_issues = issues
+        return issues
+
     def load_from_file(self, file_path: str) -> BOMNode:
         """
         从文件加载BOM数据
@@ -201,10 +320,12 @@ class TreeBuilder:
         """
         file_path = Path(file_path)
 
+        # ID 列强制字符串，避免长物料号被推断为数值丢失精度（A7）
+        id_dtype = {'子物料号': str, '父物料号': str}
         if file_path.suffix.lower() == '.csv':
-            df = pd.read_csv(file_path, encoding='utf-8-sig')
+            df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=id_dtype)
         elif file_path.suffix.lower() in ['.xlsx', '.xls']:
-            df = pd.read_excel(file_path)
+            df = pd.read_excel(file_path, dtype=id_dtype)
         else:
             raise ValueError(f"不支持的文件格式: {file_path.suffix}")
 
@@ -219,31 +340,53 @@ class TreeBuilder:
         """
         file_path = Path(config_file)
 
+        # ID 列强制字符串，避免 "12345.0" 之类的数值读入导致匹配失败（A6）
+        id_dtype = {'父物料号': str, '物料号': str}
         if file_path.suffix.lower() == '.csv':
-            config_df = pd.read_csv(file_path, encoding='utf-8-sig')
+            config_df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=id_dtype)
         elif file_path.suffix.lower() in ['.xlsx', '.xls']:
-            config_df = pd.read_excel(file_path)
+            config_df = pd.read_excel(file_path, dtype=id_dtype)
         else:
             raise ValueError(f"不支持的文件格式: {file_path.suffix}")
 
+        self.config_load_warnings = []
+
+        # 构建 (规范化父号, 规范化物料号) -> 节点实例列表。
+        # 同一父下同物料可能有多个实例（拆分物料），按配置行出现顺序消费第 n 个，
+        # 不再命中第一个就 break（A6）。
+        node_index: Dict[tuple, List[BOMNode]] = {}
+        for node in self.all_nodes:
+            key = (_norm_id(node.parent_id), _norm_id(node.material_id))
+            node_index.setdefault(key, []).append(node)
+        consumed: Dict[tuple, int] = {}
+
         # 应用配置
         for _, row in config_df.iterrows():
-            parent_id = str(row.get('父物料号', '')).strip()
-            material_id = str(row.get('物料号', '')).strip()
+            parent_id = _norm_id(row.get('父物料号', ''))
+            material_id = _norm_id(row.get('物料号', ''))
+            key = (parent_id, material_id)
 
-            # 查找节点
-            for node in self.all_nodes:
-                if node.material_id == material_id and node.parent_id == parent_id:
-                    # 更新配置
-                    if '是否展开' in row:
-                        node.expand_status = str(row['是否展开']).strip()
-                    if '发运主体' in row:
-                        node.shipping_entity = str(row['发运主体']).strip()
-                    if '发运方式' in row:
-                        node.shipping_method = str(row['发运方式']).strip()
-                    if '备注' in row:
-                        node.remark = str(row['备注']).strip()
-                    break
+            candidates = node_index.get(key, [])
+            idx = consumed.get(key, 0)
+            if idx >= len(candidates):
+                self.config_load_warnings.append(
+                    f'未匹配到节点：父物料号={parent_id or "（空）"}，物料号={material_id or "（空）"}'
+                )
+                continue
+            node = candidates[idx]
+            consumed[key] = idx + 1
+
+            # 更新配置：空单元格不再被写成 'nan'（A5）
+            if '是否展开' in row:
+                expand = _safe_cell_text(row['是否展开'])
+                if expand in ('是', '否'):
+                    node.expand_status = expand
+            if '发运主体' in row:
+                node.shipping_entity = _norm_entity_code(row['发运主体'])
+            if '发运方式' in row:
+                node.shipping_method = _safe_cell_text(row['发运方式'])
+            if '备注' in row:
+                node.remark = _safe_cell_text(row['备注'])
 
     def save_config(self, config_file: str):
         """

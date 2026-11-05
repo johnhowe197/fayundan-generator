@@ -43,8 +43,10 @@ class ProgressMixin:
                 )
 
                 if reply == QMessageBox.Yes:
-                    self.save_progress()
-                    if not hasattr(self, '_last_progress_path') or not self._last_progress_path:
+                    # B5：以 save_progress() 的真实返回值判定是否保存成功，
+                    # 不能用 _last_progress_path 是否存在（保存失败时也可能残留路径）
+                    saved = self.save_progress()
+                    if not saved:
                         reply2 = QMessageBox.question(
                             self, '继续导入',
                             '工作进度未保存，是否继续导入新BOM？\n（当前配置将丢失）',
@@ -57,6 +59,19 @@ class ProgressMixin:
                     return
 
             self._do_import_bom(file_path)
+
+    def _show_structure_warning(self, issues):
+        """显示 BOM 结构问题（A2-1）：前 10 条，提醒用户存在未挂载节点"""
+        if not issues:
+            return
+        detail = '\n'.join(f'• {item}' for item in issues[:10])
+        if len(issues) > 10:
+            detail += f'\n… 还有 {len(issues) - 10} 条'
+        QMessageBox.warning(
+            self, 'BOM结构警告',
+            'BOM树结构存在以下问题，相关节点不会参与发运单计算：\n\n'
+            f'{detail}\n\n'
+            '请检查ERP导出的层级/父物料号是否正确。')
 
     def _do_import_bom(self, file_path):
         """执行BOM导入"""
@@ -73,6 +88,9 @@ class ProgressMixin:
 
                 self.tree_builder.build_from_dataframe(df)
 
+                # A2-1：结构异常（孤儿节点/多根）必须让用户可见，避免静默少发
+                issues = self.tree_builder.validate_structure()
+
                 # 切换数据集：清空撤销/恢复栈，避免旧数据快照被撤销复活进新数据集
                 self._clear_undo_redo()
 
@@ -81,6 +99,8 @@ class ProgressMixin:
                 self._current_file = file_path
                 self._dirty = True
                 self._update_title()
+            if issues:
+                self._show_structure_warning(issues)
             self.statusBar().showMessage(f'BOM数据导入成功: {file_path}')
             QMessageBox.information(self, '成功', f'BOM数据导入成功！\n\n'
                                     f'总节点数: {len(self.tree_builder.all_nodes)}')
@@ -99,7 +119,7 @@ class ProgressMixin:
             return False
 
         if hasattr(self, '_last_progress_path') and self._last_progress_path:
-            file_path = self._last_progress_path
+            candidate = Path(self._last_progress_path)
         else:
             # 默认保存目录指向可写应用目录（打包后为 EXE 所在目录/progress）
             from utils.helpers import get_writable_app_dir
@@ -114,7 +134,8 @@ class ProgressMixin:
             )
             if not file_path:
                 return False  # 用户取消保存
-            self._last_progress_path = Path(file_path)
+            # B5：先保存在局部变量，只有写盘成功后才缓存到 _last_progress_path
+            candidate = Path(file_path)
 
         try:
             project_info = {
@@ -127,17 +148,19 @@ class ProgressMixin:
 
             progress_mgr = ProgressFileManager()
             total, visible, hidden = progress_mgr.save(
-                str(file_path),
+                str(candidate),
                 self.tree_builder.all_nodes,
                 project_info,
                 hidden_checker=lambda n: self._is_node_hidden(n)
             )
 
-            self.statusBar().showMessage(f'进度已保存: {file_path}')
+            # 写盘成功后才缓存路径；异常路径不缓存（B5）
+            self._last_progress_path = candidate
+            self.statusBar().showMessage(f'进度已保存: {candidate}')
             self._dirty = False
             self._update_title()
             QMessageBox.information(self, '成功',
-                f'工作进度保存成功！\n\n文件: {file_path}\n\n'
+                f'工作进度保存成功！\n\n文件: {candidate}\n\n'
                 f'总物料数: {total} 个\n'
                 f'可见节点: {visible} 个\n'
                 f'已隐藏节点: {hidden} 个')
@@ -166,6 +189,9 @@ class ProgressMixin:
 
                 self.tree_builder.build_from_dataframe(df)
 
+                # A2-1：加载进度后同样提示结构异常
+                issues = self.tree_builder.validate_structure()
+
                 # 切换数据集：清空撤销/恢复栈，避免旧数据快照被撤销复活进新数据集
                 self._clear_undo_redo()
 
@@ -193,6 +219,8 @@ class ProgressMixin:
                 self._current_file = file_path
                 self._dirty = False
                 self._update_title()
+                if issues:
+                    self._show_structure_warning(issues)
                 self.statusBar().showMessage(f'进度已加载: {file_path}')
                 QMessageBox.information(self, '成功',
                     f'工作进度加载成功！\n\n文件: {file_path}\n\n'
@@ -212,7 +240,13 @@ class ProgressMixin:
             try:
                 self.statusBar().showMessage('正在导入配置...')
                 self.tree_builder.load_config(file_path)
+                if self.tree_builder.config_load_warnings:
+                    QMessageBox.warning(
+                        self, '配置匹配提示',
+                        '以下配置行未匹配到节点：\n'
+                        + '\n'.join(f'• {w}' for w in self.tree_builder.config_load_warnings[:10]))
                 self.refresh_tree()
+                self._invalidate_shipping_order(message=True)
                 self.update_status_bar()
                 self.statusBar().showMessage(f'成功导入发运配置: {file_path}')
                 QMessageBox.information(self, '成功', '发运配置导入成功！')
@@ -262,7 +296,13 @@ class ProgressMixin:
 
                 if reply == QMessageBox.Yes:
                     self.tree_builder.load_config(file_path)
+                    if self.tree_builder.config_load_warnings:
+                        QMessageBox.warning(
+                            self, '配置匹配提示',
+                            '以下配置行未匹配到节点：\n'
+                            + '\n'.join(f'• {w}' for w in self.tree_builder.config_load_warnings[:10]))
                     self.refresh_tree()
+                    self._invalidate_shipping_order(message=True)
                     self.update_status_bar()
                     self.statusBar().showMessage(f'配置已加载: {file_path}')
                     QMessageBox.information(self, '成功', f'配置加载成功！\n\n文件: {file_path}')

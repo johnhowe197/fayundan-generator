@@ -871,6 +871,11 @@
         </div>
       </div>
 
+      <div class="info-box info-warn">
+        <span class="info-icon">⚠️</span>
+        <span><strong>请保持 ERP 导出的原始行序</strong>：不要按物料号重新排序、筛选后粘贴或跨文件合并。父节点匹配依赖深度优先行序，重排后子物料可能挂到同名父节点的另一个实例下，导致数量错误。</span>
+      </div>
+
       <div class="info-box info-tip">
         <span class="info-icon">💡</span>
         <span>中途随时 <strong>💾 保存</strong> 进度，下次 <strong>📂 加载</strong> 继续；做错了 <strong>↩️ 撤销</strong>。</span>
@@ -1199,7 +1204,10 @@
       <div class="card">
         <div class="card-title"><span class="icon">🔔</span> 未保存提醒</div>
         <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
-          有改动未保存时，标题栏显示 <code>*未保存</code>；此时关窗会弹出"保存 / 不保存 / 取消"。
+          有改动未保存时，标题栏显示 <code>*未保存</code>；此时关窗会弹出三个按钮：
+          <strong>保存并退出</strong>（保存成功后退出，失败或取消保存则留在程序内）、
+          <strong>不保存并退出</strong>（直接退出并丢弃修改）、
+          <strong>返回编辑</strong>（留在程序内继续编辑，按 <kbd>Esc</kbd> 等同此按钮）。
         </p>
       </div>
 
@@ -1234,7 +1242,7 @@
       <div class="card">
         <div class="card-title"><span class="icon">⚖️</span> 总重</div>
         <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
-          按各行 <code>数量 × 净重</code> 逐行求和。
+          按各行 <code>数量 × 净重</code> 逐行求和。导出时 H 列直接写入该聚合数值（不是公式），Excel 与 CSV 结果一致。
         </p>
       </div>
 
@@ -1317,6 +1325,39 @@
         </div>
         <div class="faq-a">
           点工具栏 🏷️ 发运主体，在定义窗口增删改名称，或用预设管理（保存为预设 / 新建 / 置为当前）。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <span class="q-badge">Q</span>
+          <span>导入时提示"第 N 行数量/净重无法解析"？</span>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div class="faq-a">
+          程序会阻断本次导入并指出具体行号，避免错误数据静默变成 0。请回到 Excel 修正该行（如 <code>2套</code> 改为 <code>2</code>，空数量补值），净重为空会自动按 0 处理。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <span class="q-badge">Q</span>
+          <span>导入时提示存在多个顶级节点？</span>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div class="faq-a">
+          一个文件只能有一个顶层产品（父物料号为空的根节点）。若提示有多个，说明文件里混入了第二个顶层物料，请拆分为独立文件后再导入；程序默认只处理第一个根节点。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <span class="q-badge">Q</span>
+          <span>程序配置（发运主体、预设）保存在哪里？</span>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div class="faq-a">
+          开发环境在项目 <code>config/</code>，打包后为 EXE 所在目录的 <code>config/</code>。详见 <code>docs/配置保存说明.md</code>。
         </div>
       </div>
     </div>
